@@ -94,11 +94,40 @@ dump_exception :: proc(ctx: js.Context) {
 	}
 }
 
-js_console_log :: proc"c"(ctx: js.Context, this_val: js.Value_Const, argc: c.int, argv: [^]js.Value_Const) -> js.Value {
-	context = runtime.default_context()
+Odin_Function_Stateful :: #type proc(ctx: js.Context, state: ^Runtime_State, this: js.Value_Const, args: ..js.Value_Const) -> js.Value
+Odin_Function_Stateless :: #type proc(ctx: js.Context, this: js.Value_Const, args: ..js.Value_Const) -> js.Value
+to_js_c_function_stateful :: proc($fn: Odin_Function_Stateful) -> js.C_Function {
+	js_c_func :: proc"c"(ctx: js.Context, this_val: js.Value_Const, argc: c.int, argv: [^]js.Value_Const) -> js.Value {
+		state := cast(^Runtime_State) js.GetRuntimeOpaque(js.GetRuntime(ctx))
 
-	args := slice.from_ptr(argv, int(argc))
+		context = state.ctx
 
+		args := slice.from_ptr(argv, int(argc))
+
+		return fn(ctx, state, this_val, ..args)
+	}
+
+	return js_c_func
+}
+to_js_c_function_stateless :: proc($fn: Odin_Function_Stateless) -> js.C_Function {
+	js_c_func :: proc"c"(ctx: js.Context, this_val: js.Value_Const, argc: c.int, argv: [^]js.Value_Const) -> js.Value {
+		state := cast(^Runtime_State) js.GetRuntimeOpaque(js.GetRuntime(ctx))
+
+		context = state.ctx
+
+		args := slice.from_ptr(argv, int(argc))
+
+		return fn(ctx, this_val, ..args)
+	}
+
+	return js_c_func
+}
+to_js_c_function :: proc {
+	to_js_c_function_stateful,
+	to_js_c_function_stateless,
+}
+
+js_console_log :: proc(ctx: js.Context, this: js.Value_Const, args: ..js.Value_Const) -> js.Value {
 	for arg, i in args {
 		if i > 0 do fmt.print(' ')
 
@@ -119,7 +148,7 @@ install_console :: proc(ctx: js.Context) {
 	global_obj := js.GetGlobalObject(ctx)
 	defer js.FreeValue(ctx, global_obj)
 	console_obj := js.NewObject(ctx)
-	log_fn := js.NewCFunction(ctx, js_console_log, "log", 1)
+	log_fn := js.NewCFunction(ctx, to_js_c_function(js_console_log), "log", 1)
 
 	js.SetPropertyStr(ctx, console_obj, "log", log_fn)
 	js.SetPropertyStr(ctx, global_obj, "console", console_obj)
@@ -134,9 +163,7 @@ install_runtime :: proc(rt: js.Runtime, state: ^Runtime_State) {
 	js.SetRuntimeOpaque(rt, state)
 }
 
-js_process_uptime :: proc"c"(ctx: js.Context, this_val: js.Value_Const, argc: c.int, argv: [^]js.Value_Const) -> js.Value {
-	state := cast(^Runtime_State) js.GetRuntimeOpaque(js.GetRuntime(ctx))
-
+js_process_uptime :: proc(ctx: js.Context, state: ^Runtime_State, this_val: js.Value_Const, args: ..js.Value_Const) -> js.Value {
 	now := time.tick_now()
 
 	uptime_nanos := time.tick_diff(state.startup_time, now)
@@ -148,7 +175,7 @@ install_process :: proc(ctx: js.Context) {
 	global_obj := js.GetGlobalObject(ctx)
 	defer js.FreeValue(ctx, global_obj)
 	process_obj := js.NewObject(ctx)
-	uptime_fn := js.NewCFunction(ctx, js_process_uptime, "uptime", 1)
+	uptime_fn := js.NewCFunction(ctx, to_js_c_function(js_process_uptime), "uptime", 1)
 
 	js.SetPropertyStr(ctx, process_obj, "uptime", uptime_fn)
 	js.SetPropertyStr(ctx, global_obj, "process", process_obj)
