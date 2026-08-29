@@ -59,25 +59,25 @@ Value :: struct {
 
 Value_Const :: Value
 
-value_get_tag :: #force_inline proc(v: Value) -> Tag {
+value_get_tag :: #force_inline proc"contextless"(v: Value) -> Tag {
 	return Tag(v.tag)
 }
-value_get_norm_tag :: #force_inline proc(v: Value) -> Tag {
+value_get_norm_tag :: #force_inline proc"contextless"(v: Value) -> Tag {
 	return value_get_tag(v)
 }
-value_get_int :: #force_inline proc(v: Value) -> int {
+value_get_int :: #force_inline proc"contextless"(v: Value) -> int {
 	return int(v.uint64)
 }
-value_get_bool :: #force_inline proc(v: Value) -> bool {
+value_get_bool :: #force_inline proc"contextless"(v: Value) -> bool {
 	return bool(v.uint64)
 }
-value_get_float64 :: #force_inline proc(v: Value) -> f64 {
+value_get_float64 :: #force_inline proc"contextless"(v: Value) -> f64 {
 	return v.float64
 }
-value_get_short_big_int :: #force_inline proc(v: Value) -> Short_Big_Int_T {
+value_get_short_big_int :: #force_inline proc"contextless"(v: Value) -> Short_Big_Int_T {
 	return v.short_big_int
 }
-value_get_ptr :: #force_inline proc(v: Value) -> rawptr {
+value_get_ptr :: #force_inline proc"contextless"(v: Value) -> rawptr {
 	return v.ptr
 }
 
@@ -94,20 +94,20 @@ mkptr :: #force_inline proc "contextless" (tag: Tag, p: rawptr) -> Value {
 	}
 }
 
-__new_float64 :: #force_inline proc(ctx: ^Context, d: c.double) -> Value {
+__new_float64 :: #force_inline proc"contextless"(ctx: Context, d: c.double) -> Value {
 	v: Value
 	v.tag = i64(Tag.Float64)
 	v.u.float64 = d
 	return v
 }
-__new_short_big_int :: #force_inline proc(ctx: ^Context, d: i64) -> Value {
+__new_short_big_int :: #force_inline proc"contextless"(ctx: Context, d: i64) -> Value {
 	v: Value
 	v.tag = i64(Tag.ShortBigInt)
 	v.u.short_big_int = Short_Big_Int_T(d)
 	return v
 }
 
-value_has_ref_count :: #force_inline proc(v: Value) -> bool {
+value_has_ref_count :: #force_inline proc"contextless"(v: Value) -> bool {
 	return (transmute(c.uint) value_get_tag(v)) >= (transmute(c.uint) Tag.First)
 }
 
@@ -158,9 +158,12 @@ C_Function_Enum :: enum c.int {
 foreign quickjs {
 	NewRuntime :: proc() -> Runtime ---
 	FreeRuntime :: proc(rt: Runtime) ---
+	GetRuntimeOpaque :: proc(rt: Runtime) -> rawptr ---
+	SetRuntimeOpaque :: proc(rt: Runtime, opaque: rawptr) ---
 
 	NewContext :: proc(rt: Runtime) -> Context ---
 	FreeContext :: proc(s: Context) ---
+	GetRuntime :: proc(ctx: Context) -> Runtime ---
 
 	GetException :: proc(ctx: Context) -> Value ---
 
@@ -186,22 +189,38 @@ foreign quickjs {
 	_FreeValue :: proc(ctx: Context, v: Value) ---
 }
 
-IsNull :: #force_inline proc(v: Value_Const) -> bool {
+NewFloat64 :: #force_inline proc"contextless"(ctx: Context, d: f64) -> Value {
+	val: i32
+	u, t: struct #raw_union {
+		d: f64,
+		u: u64,
+	}
+
+	if d >= f64(c.INT32_MIN) && d <= f64(c.INT32_MAX) {
+		u.d = d
+		val = i32(d)
+		t.d = f64(val)
+		if u.u == t.u do return mkval(.Int, transmute(u32) val)
+	}
+	return __new_float64(ctx, d)
+}
+
+IsNull :: #force_inline proc"contextless"(v: Value_Const) -> bool {
 	return value_get_tag(v) == .Undefined
 }
-IsUndefined :: #force_inline proc(v: Value_Const) -> bool {
+IsUndefined :: #force_inline proc"contextless"(v: Value_Const) -> bool {
 	return value_get_tag(v) == .Undefined
 }
-IsException :: #force_inline proc(v: Value_Const) -> bool {
+IsException :: #force_inline proc"contextless"(v: Value_Const) -> bool {
 	// TODO: some way to emulate js_unlikely?
 	return value_get_tag(v) == .Exception
 }
 
 @(private)
-_rc :: #force_inline proc(ptr: rawptr) -> ^Ref_Count_Header {
+_rc :: #force_inline proc"contextless"(ptr: rawptr) -> ^Ref_Count_Header {
 	return cast(^Ref_Count_Header) &((cast([^]u32)ptr)[-1])
 }
-FreeValue :: #force_inline proc(ctx: Context, v: Value) {
+FreeValue :: #force_inline proc"contextless"(ctx: Context, v: Value) {
 	if value_has_ref_count(v) {
 		p := _rc(value_get_ptr(v))
 		p.ref_count -= 1
@@ -211,10 +230,10 @@ FreeValue :: #force_inline proc(ctx: Context, v: Value) {
 	}
 }
 
-ToCString :: #force_inline proc(ctx: Context, val1: Value_Const) -> cstring {
+ToCString :: #force_inline proc"contextless"(ctx: Context, val1: Value_Const) -> cstring {
 	return ToCStringLen2(ctx, nil, val1, 0)
 }
 
-NewCFunction :: proc(ctx: Context, func: C_Function, name: cstring, length: c.int) -> Value {
+NewCFunction :: proc"contextless"(ctx: Context, func: C_Function, name: cstring, length: c.int) -> Value {
 	return NewCFunction2(ctx, func, name, length, .generic, 0)
 }

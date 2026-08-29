@@ -7,11 +7,17 @@ import "core:fmt"
 import "core:os"
 import "core:slice"
 import "core:strings"
+import "core:time"
 
 import js "vendor/quickjs"
 
 // Following the following tutorial:
 // https://healeycodes.com/building-a-runtime-with-quickjs
+
+Runtime_State :: struct {
+	ctx: runtime.Context,
+	startup_time: time.Tick,
+}
 
 main :: proc() {
 	exit_code: int
@@ -24,7 +30,11 @@ main :: proc() {
 	assert(ctx != nil)
 	defer js.FreeContext(ctx)
 
+	runtime_state: Runtime_State
+	install_runtime(rt, &runtime_state)
+
 	install_console(ctx)
+	install_process(ctx)
 
 	exit_code = run_file(ctx, os.args[1])
 }
@@ -113,4 +123,33 @@ install_console :: proc(ctx: js.Context) {
 
 	js.SetPropertyStr(ctx, console_obj, "log", log_fn)
 	js.SetPropertyStr(ctx, global_obj, "console", console_obj)
+}
+
+install_runtime :: proc(rt: js.Runtime, state: ^Runtime_State) {
+	state^ = {
+		ctx = context,
+		startup_time = time.tick_now(),
+	}
+
+	js.SetRuntimeOpaque(rt, state)
+}
+
+js_process_uptime :: proc"c"(ctx: js.Context, this_val: js.Value_Const, argc: c.int, argv: [^]js.Value_Const) -> js.Value {
+	state := cast(^Runtime_State) js.GetRuntimeOpaque(js.GetRuntime(ctx))
+
+	now := time.tick_now()
+
+	uptime_nanos := time.tick_diff(state.startup_time, now)
+
+	return js.NewFloat64(ctx, f64(uptime_nanos) / f64(time.Second))
+}
+
+install_process :: proc(ctx: js.Context) {
+	global_obj := js.GetGlobalObject(ctx)
+	defer js.FreeValue(ctx, global_obj)
+	process_obj := js.NewObject(ctx)
+	uptime_fn := js.NewCFunction(ctx, js_process_uptime, "uptime", 1)
+
+	js.SetPropertyStr(ctx, process_obj, "uptime", uptime_fn)
+	js.SetPropertyStr(ctx, global_obj, "process", process_obj)
 }
