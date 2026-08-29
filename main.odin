@@ -73,7 +73,7 @@ dump_exception :: proc(ctx: js.Context) {
 
 	if stack_text != nil && stack_text[0] != 0 {
 		if message == nil || message[0] == 0 || string(transmute(cstring) message) != string(transmute(cstring) stack_text) {
-			fmt.eprintln(stack_text)
+			fmt.eprintln(transmute(cstring) stack_text)
 		}
 	}
 }
