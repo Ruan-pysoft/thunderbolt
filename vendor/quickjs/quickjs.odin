@@ -39,7 +39,7 @@ Ref_Count_Header :: struct {
 	ref_count: c.int,
 }
 
-FLOAT64_NAN :: math.nan_f64
+FLOAT64_NAN := math.nan_f64()
 
 SHORT_BIG_INT_BITS :: 64 when size_of(rawptr) >= size_of(i64) else 32
 
@@ -81,13 +81,13 @@ value_get_ptr :: #force_inline proc(v: Value) -> rawptr {
 	return v.ptr
 }
 
-mkval :: #force_inline proc(tag: Tag, val: u32) -> Value {
+mkval :: #force_inline proc "contextless" (tag: Tag, val: u32) -> Value {
 	return {
 		{ uint64 = u64(val) },
 		i64(tag),
 	}
 }
-mkptr :: #force_inline proc(tag: Tag, p: rawptr) -> Value {
+mkptr :: #force_inline proc "contextless" (tag: Tag, p: rawptr) -> Value {
 	return {
 		{ ptr = p },
 		i64(tag),
@@ -111,6 +111,13 @@ value_has_ref_count :: #force_inline proc(v: Value) -> bool {
 	return (transmute(c.uint) value_get_tag(v)) >= (transmute(c.uint) Tag.First)
 }
 
+NULL          := mkval(.Null, 0)
+UNDEFINED     := mkval(.Undefined, 0)
+FALSE         := mkval(.Bool, 0)
+TRUE          := mkval(.Bool, 1)
+EXCEPTION     := mkval(.Exception, 0)
+UNINITIALIZED := mkval(.Uninitialized, 0)
+
 Eval_Type :: enum c.int {
 	Global   = 0,
 	Module   = 1,
@@ -127,6 +134,26 @@ Eval_Flags :: bit_field c.int {
 	async: bool             | 1,
 }
 
+C_Function :: #type proc"c"(ctx: Context, this_val: Value_Const, argc: c.int, argv: [^]Value_Const) -> Value
+C_Function_Magic :: #type proc"c"(ctx: Context, this_val: Value_Const, argc: c.int, argv: [^]Value_Const, magic: c.int) -> Value
+C_Function_Data :: #type proc"c"(ctx: Context, this_val: Value_Const, argc: c.int, argv: [^]Value_Const, magic: c.int, func_data: ^Value) -> Value
+
+C_Function_Enum :: enum c.int {
+	generic,
+	generic_magic,
+	constructor,
+	constructor_magic,
+	constructor_or_func,
+	constructor_or_func_magic,
+	f_f,
+	f_f_f,
+	getter,
+	setter,
+	getter_magic,
+	setter_magic,
+	iterator_next,
+}
+
 @(link_prefix="JS_")
 foreign quickjs {
 	NewRuntime :: proc() -> Runtime ---
@@ -135,14 +162,22 @@ foreign quickjs {
 	NewContext :: proc(rt: Runtime) -> Context ---
 	FreeContext :: proc(s: Context) ---
 
-	Eval :: proc(ctx: Context, input: ^u8, input_len: c.size_t, filename: cstring, eval_flags: Eval_Flags) -> Value ---
-
 	GetException :: proc(ctx: Context) -> Value ---
 
 	GetPropertyStr :: proc(ctx: Context, this_obj: Value_Const, prop: cstring) -> Value ---
+	SetPropertyStr :: proc(ctx: Context, this_obj: Value_Const, prop: cstring, val: Value) -> int ---
 
+	ToString :: proc(ctx: Context, val: Value_Const) -> Value ---
 	ToCStringLen2 :: proc(ctx: Context, plen: ^c.size_t, val1: Value_Const, cesu8: Bool) -> cstring ---
 	FreeCString :: proc(ctx: Context, ptr: cstring) ---
+
+	NewObject :: proc(ctx: Context) -> Value ---
+
+	Eval :: proc(ctx: Context, input: ^u8, input_len: c.size_t, filename: cstring, eval_flags: Eval_Flags) -> Value ---
+	GetGlobalObject :: proc(ctx: Context) -> Value ---
+
+	NewCFunction2 :: proc(ctx: Context, func: C_Function, name: cstring, length: c.int, cproto: C_Function_Enum, magic: c.int) -> Value ---
+	NewCFunctionData :: proc(ctx: Context, func: C_Function_Data, length: c.int, magic: c.int, data_len: c.int, data: ^Value_Const) -> Value ---
 }
 
 @(link_prefix="__JS")
@@ -178,4 +213,8 @@ FreeValue :: #force_inline proc(ctx: Context, v: Value) {
 
 ToCString :: #force_inline proc(ctx: Context, val1: Value_Const) -> cstring {
 	return ToCStringLen2(ctx, nil, val1, 0)
+}
+
+NewCFunction :: proc(ctx: Context, func: C_Function, name: cstring, length: c.int) -> Value {
+	return NewCFunction2(ctx, func, name, length, .generic, 0)
 }

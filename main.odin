@@ -1,7 +1,11 @@
 package thunderbolt
 
+import "base:runtime"
+
+import "core:c"
 import "core:fmt"
 import "core:os"
+import "core:slice"
 import "core:strings"
 
 import js "vendor/quickjs"
@@ -19,6 +23,8 @@ main :: proc() {
 	ctx := js.NewContext(rt)
 	assert(ctx != nil)
 	defer js.FreeContext(ctx)
+
+	install_console(ctx)
 
 	exit_code = run_file(ctx, os.args[1])
 }
@@ -76,4 +82,35 @@ dump_exception :: proc(ctx: js.Context) {
 			fmt.eprintln(transmute(cstring) stack_text)
 		}
 	}
+}
+
+js_console_log :: proc"c"(ctx: js.Context, this_val: js.Value_Const, argc: c.int, argv: [^]js.Value_Const) -> js.Value {
+	context = runtime.default_context()
+
+	args := slice.from_ptr(argv, int(argc))
+
+	for arg, i in args {
+		if i > 0 do fmt.print(' ')
+
+		string_value := js.ToString(ctx, arg)
+		defer js.FreeValue(ctx, string_value)
+		text := js.ToCString(ctx, string_value)
+		defer js.FreeCString(ctx, text)
+
+		fmt.print(text)
+	}
+
+	fmt.println()
+
+	return js.UNDEFINED
+}
+
+install_console :: proc(ctx: js.Context) {
+	global_obj := js.GetGlobalObject(ctx)
+	defer js.FreeValue(ctx, global_obj)
+	console_obj := js.NewObject(ctx)
+	log_fn := js.NewCFunction(ctx, js_console_log, "log", 1)
+
+	js.SetPropertyStr(ctx, console_obj, "log", log_fn)
+	js.SetPropertyStr(ctx, global_obj, "console", console_obj)
 }
