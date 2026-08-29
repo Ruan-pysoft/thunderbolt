@@ -176,8 +176,22 @@ foreign quickjs {
 
 	NewObject :: proc(ctx: Context) -> Value ---
 
+	IsFunction :: proc(ctx: Context, val: Value_Const) -> Bool ---
+
+	Call :: proc(ctx: Context, func_obj: Value_Const, this_obj: Value_Const, argc: c.int, argv: [^]Value_Const) -> Value ---
 	Eval :: proc(ctx: Context, input: ^u8, input_len: c.size_t, filename: cstring, eval_flags: Eval_Flags) -> Value ---
 	GetGlobalObject :: proc(ctx: Context) -> Value ---
+
+	ToBool :: proc(ctx: Context, val: Value_Const) -> c.int --- // return -1 for EXCEPTION
+	ToInt32 :: proc(ctx: Context, pres: ^i32, val: Value_Const) -> c.int ---
+	ToInt64 :: proc(ctx: Context, plen: ^i64, val: Value_Const) -> c.int ---
+	ToIndex :: proc(ctx: Context, plen: ^u64, val: Value_Const) -> c.int ---
+	ToFloat64 :: proc(ctx: Context, pres: ^f64, val: Value_Const) -> c.int ---
+	ToBigInt64 :: proc(ctx: Context, pres: ^i64, val: Value_Const) -> c.int ---
+	ToInt64Ext :: proc(ctx: Context, pres: ^i64, val: Value_Const) -> c.int ---
+
+	IsJobPending :: proc(rt: Runtime) -> Bool ---
+	ExecutePendingJob :: proc(rt: Runtime, ctx: ^Context) -> c.int ---
 
 	NewCFunction2 :: proc(ctx: Context, func: C_Function, name: cstring, length: c.int, cproto: C_Function_Enum, magic: c.int) -> Value ---
 	NewCFunctionData :: proc(ctx: Context, func: C_Function_Data, length: c.int, magic: c.int, data_len: c.int, data: ^Value_Const) -> Value ---
@@ -189,6 +203,18 @@ foreign quickjs {
 	_FreeValue :: proc(ctx: Context, v: Value) ---
 }
 
+NewInt32 :: #force_inline proc"contextless"(ctx: Context, val: i32) -> Value {
+	return mkval(.Int, transmute(u32) val)
+}
+NewInt64 :: #force_inline proc"contextless"(ctx: Context, val: i64) -> Value {
+	v: Value
+	if val == i64(i32(val)) {
+		v = NewInt32(ctx, i32(val))
+	} else {
+		v = __new_float64(ctx, f64(val))
+	}
+	return v
+}
 NewFloat64 :: #force_inline proc"contextless"(ctx: Context, d: f64) -> Value {
 	val: i32
 	u, t: struct #raw_union {
@@ -205,6 +231,10 @@ NewFloat64 :: #force_inline proc"contextless"(ctx: Context, d: f64) -> Value {
 	return __new_float64(ctx, d)
 }
 
+IsNumber :: #force_inline proc"contextless"(v: Value_Const) -> bool {
+	tag := value_get_tag(v)
+	return tag == .Int || tag == .Float64
+}
 IsNull :: #force_inline proc"contextless"(v: Value_Const) -> bool {
 	return value_get_tag(v) == .Undefined
 }
@@ -228,6 +258,18 @@ FreeValue :: #force_inline proc"contextless"(ctx: Context, v: Value) {
 			_FreeValue(ctx, v)
 		}
 	}
+}
+
+DupValue :: #force_inline proc"contextless"(ctx: Context, v: Value) -> Value {
+	if value_has_ref_count(v) {
+		p := _rc(value_get_ptr(v))
+		p.ref_count += 1
+	}
+	return v
+}
+
+ToUint32 :: #force_inline proc"contextless"(ctx: Context, pres: ^u32, val: Value_Const) -> c.int {
+	return ToInt32(ctx, cast(^i32)pres, val)
 }
 
 ToCString :: #force_inline proc"contextless"(ctx: Context, val1: Value_Const) -> cstring {
