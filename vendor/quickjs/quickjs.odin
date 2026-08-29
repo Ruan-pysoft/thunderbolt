@@ -203,6 +203,9 @@ foreign quickjs {
 	_FreeValue :: proc(ctx: Context, v: Value) ---
 }
 
+NewBool :: #force_inline proc"contextless"(ctx: Context, val: Bool) -> Value {
+	return mkval(.Bool, u32(val != 0))
+}
 NewInt32 :: #force_inline proc"contextless"(ctx: Context, val: i32) -> Value {
 	return mkval(.Int, transmute(u32) val)
 }
@@ -244,6 +247,13 @@ IsUndefined :: #force_inline proc"contextless"(v: Value_Const) -> bool {
 IsException :: #force_inline proc"contextless"(v: Value_Const) -> bool {
 	// TODO: some way to emulate js_unlikely?
 	return value_get_tag(v) == .Exception
+}
+IsUnititialized :: #force_inline proc"contextless"(v: Value_Const) -> bool {
+	// TODO: some way to emulate js_unlikely?
+	return value_get_tag(v) == .Uninitialized
+}
+IsString :: #force_inline proc"contextless"(v: Value_Const) -> bool {
+	return value_get_tag(v) == .String || value_get_tag(v) == .StringRope
 }
 
 @(private)

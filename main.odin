@@ -47,6 +47,7 @@ main :: proc() {
 	install_console(ctx)
 	install_process(ctx)
 	install_globals(ctx)
+	install_raylib(ctx)
 
 	exit_code = run_file(ctx, os.args[1])
 
