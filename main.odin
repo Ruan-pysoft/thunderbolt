@@ -10,6 +10,8 @@ import "core:slice"
 import "core:strings"
 import "core:time"
 
+import rl "vendor:raylib"
+
 import js "vendor/quickjs"
 
 // Following the following tutorial:
@@ -50,6 +52,9 @@ main :: proc() {
 	install_raylib(ctx)
 
 	exit_code = run_file(ctx, os.args[1])
+
+	raylib_start(ctx)
+	defer raylib_end()
 
 	if !run_event_loop(ctx) do exit_code = 1
 }
@@ -308,18 +313,19 @@ run_event_loop :: proc(ctx: js.Context) -> (ok: bool) {
 	rt := js.GetRuntime(ctx)
 	state := cast(^Runtime_State) js.GetRuntimeOpaque(rt)
 
-	for priority_queue.len(state.timers) != 0 || runtime_has_async_work(state) || js.IsJobPending(rt) != 0 {
+	window_should_close := false
+	for priority_queue.len(state.timers) != 0 || runtime_has_async_work(state) || js.IsJobPending(rt) != 0 || !window_should_close {
 		run_expired_timers(ctx)
 		run_completed_file_jobs(ctx)
 		drain_pending_jobs(rt)
 
-		if priority_queue.len(state.timers) == 0 && !runtime_has_async_work(state) && js.IsJobPending(rt) == 0 {
-			break
+		if window_should_close = window_should_close ? true : rl.WindowShouldClose(); !window_should_close {
+			raylib_run_eventloop(ctx)
 		}
 
-		timeout := compute_wait_timeout(state)
-
-		wait_for_events(state, timeout)
+		if priority_queue.len(state.timers) == 0 && !runtime_has_async_work(state) && js.IsJobPending(rt) == 0 && window_should_close {
+			break
+		}
 	}
 
 	return true
