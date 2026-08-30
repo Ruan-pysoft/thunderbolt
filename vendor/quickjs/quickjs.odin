@@ -170,6 +170,7 @@ foreign quickjs {
 	GetPropertyStr :: proc(ctx: Context, this_obj: Value_Const, prop: cstring) -> Value ---
 	SetPropertyStr :: proc(ctx: Context, this_obj: Value_Const, prop: cstring, val: Value) -> int ---
 
+	NewStringLen :: proc(ctx: Context, str1: cstring, len1: c.size_t) -> Value ---
 	ToString :: proc(ctx: Context, val: Value_Const) -> Value ---
 	ToCStringLen2 :: proc(ctx: Context, plen: ^c.size_t, val1: Value_Const, cesu8: Bool) -> cstring ---
 	FreeCString :: proc(ctx: Context, ptr: cstring) ---
@@ -248,7 +249,7 @@ IsException :: #force_inline proc"contextless"(v: Value_Const) -> bool {
 	// TODO: some way to emulate js_unlikely?
 	return value_get_tag(v) == .Exception
 }
-IsUnititialized :: #force_inline proc"contextless"(v: Value_Const) -> bool {
+IsUninitialized :: #force_inline proc"contextless"(v: Value_Const) -> bool {
 	// TODO: some way to emulate js_unlikely?
 	return value_get_tag(v) == .Uninitialized
 }
@@ -282,6 +283,9 @@ ToUint32 :: #force_inline proc"contextless"(ctx: Context, pres: ^u32, val: Value
 	return ToInt32(ctx, cast(^i32)pres, val)
 }
 
+NewString :: #force_inline proc"contextless"(ctx: Context, str: cstring) -> Value {
+	return NewStringLen(ctx, str, len(str))
+}
 ToCString :: #force_inline proc"contextless"(ctx: Context, val1: Value_Const) -> cstring {
 	return ToCStringLen2(ctx, nil, val1, 0)
 }

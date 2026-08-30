@@ -5,28 +5,31 @@ import "core:fmt"
 
 import rl "vendor:raylib"
 
-import js "vendor/quickjs"
+import js "vendor/quickjs_odin"
 
 raylib_start :: proc(ctx: js.Context) {
 	global_obj := js.GetGlobalObject(ctx)
 	defer js.FreeValue(ctx, global_obj)
 
-	js_target_fps := js.GetPropertyStr(ctx, global_obj, "fps")
+	js_target_fps := js.GetPropertyCStr(ctx, global_obj, "fps")
 	defer js.FreeValue(ctx, js_target_fps)
-	js_window_name := js.GetPropertyStr(ctx, global_obj, "window_title")
+	js_window_name := js.GetPropertyCStr(ctx, global_obj, "window_title")
 	defer js.FreeValue(ctx, js_window_name)
-	js_window_width := js.GetPropertyStr(ctx, global_obj, "window_width")
+	js_window_width := js.GetPropertyCStr(ctx, global_obj, "window_width")
 	defer js.FreeValue(ctx, js_window_width)
-	js_window_height := js.GetPropertyStr(ctx, global_obj, "window_height")
+	js_window_height := js.GetPropertyCStr(ctx, global_obj, "window_height")
 	defer js.FreeValue(ctx, js_window_height)
 
 	target_fps: c.int = 60
 	if js.IsNumber(js_target_fps) {
-		int32: i32
-		assert(js.ToInt32(ctx, &int32, js_target_fps) == 0)
-		target_fps = c.int(int32)
+		res, ok := js.ToInt(ctx, js_target_fps)
+		assert(ok)
+		target_fps = c.int(res)
 	} else if !js.IsUndefined(js_target_fps) {
 		fmt.eprintln("WARNING: `fps` should be initialised with a number, defaulting to 60")
+	} else {
+		v := js.NewInt(ctx, int(target_fps))
+		js.SetPropertyCStr(ctx, global_obj, "fps", v)
 	}
 
 	window_name: cstring = "THUNDERBOLT WINDOW"
@@ -35,24 +38,35 @@ raylib_start :: proc(ctx: js.Context) {
 		window_name = js.ToCString(ctx, js_window_name)
 	} else if !js.IsUndefined(js_window_name) {
 		fmt.eprintln("WARNING: `window_title` should be initialised with a string")
+	} else {
+		v := js.NewString(ctx, window_name)
+		js.SetPropertyCStr(ctx, global_obj, "window_title", v)
 	}
 
 	window_width: c.int = 800
 	if js.IsNumber(js_window_width) {
-		int32: i32
-		assert(js.ToInt32(ctx, &int32, js_window_width) == 0)
-		window_width = c.int(int32)
+		fmt.eprintln("width is number")
+		res, ok := js.ToInt(ctx, js_window_width)
+		assert(ok)
+		window_width = c.int(res)
 	} else if !js.IsUndefined(js_window_width) {
 		fmt.eprintln("WARNING: `window_width` should be initialised with a number, defaulting to 800")
+	} else {
+		fmt.eprintln("width is not number")
+		v := js.NewInt(ctx, int(window_width))
+		js.SetPropertyCStr(ctx, global_obj, "window_width", v)
 	}
 
 	window_height: c.int = 600
 	if js.IsNumber(js_window_height) {
-		int32: i32
-		assert(js.ToInt32(ctx, &int32, js_window_height) == 0)
-		window_height = c.int(int32)
+		res, ok := js.ToInt(ctx, js_window_height)
+		assert(ok)
+		window_height = c.int(res)
 	} else if !js.IsUndefined(js_window_height) {
 		fmt.eprintln("WARNING: `window_height` should be initialised with a number, defaulting to 800")
+	} else {
+		v := js.NewInt(ctx, int(window_height))
+		js.SetPropertyCStr(ctx, global_obj, "window_height", v)
 	}
 
 	rl.SetTargetFPS(target_fps)
@@ -67,9 +81,9 @@ raylib_run_eventloop :: proc(ctx: js.Context) {
 	global_obj := js.GetGlobalObject(ctx)
 	defer js.FreeValue(ctx, global_obj)
 
-	js_update_fn := js.GetPropertyStr(ctx, global_obj, "update")
+	js_update_fn := js.GetPropertyCStr(ctx, global_obj, "update")
 	defer js.FreeValue(ctx, js_update_fn)
-	js_draw_fn := js.GetPropertyStr(ctx, global_obj, "draw")
+	js_draw_fn := js.GetPropertyCStr(ctx, global_obj, "draw")
 	defer js.FreeValue(ctx, js_draw_fn)
 
 	if js.IsUndefined(js_update_fn) {
@@ -77,7 +91,7 @@ raylib_run_eventloop :: proc(ctx: js.Context) {
 		// TODO: throw exception
 		panic("no update function")
 	}
-	if js.IsFunction(ctx, js_update_fn) == 0 {
+	if !js.IsFunction(ctx, js_update_fn) {
 		fmt.eprintln("ERROR: `update` should be a function")
 		// TODO: throw exception
 		panic("no update function")
@@ -88,16 +102,17 @@ raylib_run_eventloop :: proc(ctx: js.Context) {
 		// TODO: throw exception
 		panic("no draw function")
 	}
-	if js.IsFunction(ctx, js_draw_fn) == 0 {
+	if !js.IsFunction(ctx, js_draw_fn) {
 		fmt.eprintln("ERROR: `draw` should be a function")
 		// TODO: throw exception
 		panic("no draw function")
 	}
 
-	js.FreeValue(ctx, js.Call(ctx, js_update_fn, js.UNDEFINED, 0, nil))
-	rl.BeginDrawing()
-	js.FreeValue(ctx, js.Call(ctx, js_draw_fn, js.UNDEFINED, 0, nil))
-	rl.EndDrawing()
+	js.FreeValue(ctx, js.Call(ctx, js_update_fn, js.UNDEFINED))
+
+	{ rl.BeginDrawing()
+		js.FreeValue(ctx, js.Call(ctx, js_draw_fn, js.UNDEFINED))
+	rl.EndDrawing() }
 }
 
 js_ClearBackground :: proc(ctx: js.Context, this: js.Value_Const, args: ..js.Value_Const) -> js.Value {
@@ -112,14 +127,18 @@ js_ClearBackground :: proc(ctx: js.Context, this: js.Value_Const, args: ..js.Val
 	// TODO: range checks
 	// TODO: Color type?
 
-	int32: i32
+	i: int
+	ok: bool
 
-	assert(js.ToInt32(ctx, &int32, args[0]) == 0)
-	r := u8(int32)
-	assert(js.ToInt32(ctx, &int32, args[1]) == 0)
-	g := u8(int32)
-	assert(js.ToInt32(ctx, &int32, args[2]) == 0)
-	b := u8(int32)
+	i, ok = js.ToInt(ctx, args[0])
+	assert(ok)
+	r := u8(i)
+	i, ok = js.ToInt(ctx, args[1])
+	assert(ok)
+	g := u8(i)
+	i, ok = js.ToInt(ctx, args[2])
+	assert(ok)
+	b := u8(i)
 
 	rl.ClearBackground({ r, g, b, 255 })
 
@@ -142,22 +161,30 @@ js_DrawRectangle :: proc(ctx: js.Context, this: js.Value_Const, args: ..js.Value
 	// TODO: range checks
 	// TODO: Color type?
 
-	int32: i32
+	i: int
+	ok: bool
 
-	assert(js.ToInt32(ctx, &int32, args[0]) == 0)
-	x := c.int(int32)
-	assert(js.ToInt32(ctx, &int32, args[1]) == 0)
-	y := c.int(int32)
-	assert(js.ToInt32(ctx, &int32, args[2]) == 0)
-	width := c.int(int32)
-	assert(js.ToInt32(ctx, &int32, args[3]) == 0)
-	height := c.int(int32)
-	assert(js.ToInt32(ctx, &int32, args[4]) == 0)
-	r := u8(int32)
-	assert(js.ToInt32(ctx, &int32, args[5]) == 0)
-	g := u8(int32)
-	assert(js.ToInt32(ctx, &int32, args[6]) == 0)
-	b := u8(int32)
+	i, ok = js.ToInt(ctx, args[0])
+	assert(ok)
+	x := c.int(i)
+	i, ok = js.ToInt(ctx, args[1])
+	assert(ok)
+	y := c.int(i)
+	i, ok = js.ToInt(ctx, args[2])
+	assert(ok)
+	width := c.int(i)
+	i, ok = js.ToInt(ctx, args[3])
+	assert(ok)
+	height := c.int(i)
+	i, ok = js.ToInt(ctx, args[4])
+	assert(ok)
+	r := u8(i)
+	i, ok = js.ToInt(ctx, args[5])
+	assert(ok)
+	g := u8(i)
+	i, ok = js.ToInt(ctx, args[6])
+	assert(ok)
+	b := u8(i)
 
 	rl.DrawRectangle(x, y, width, height, { r, g, b, 255 })
 
@@ -167,9 +194,9 @@ js_DrawRectangle :: proc(ctx: js.Context, this: js.Value_Const, args: ..js.Value
 install_raylib :: proc(ctx: js.Context) {
 	global_obj := js.GetGlobalObject(ctx)
 	defer js.FreeValue(ctx, global_obj)
-	ClearBackground_fn := js.NewCFunction(ctx, to_js_c_function(js_ClearBackground), "ClearBackground", 1)
-	DrawRectangle_fn := js.NewCFunction(ctx, to_js_c_function(js_DrawRectangle), "DrawRectangle", 1)
+	ClearBackground_fn := js.NewRawFunction(ctx, js.native_to_raw_function(js_ClearBackground), "ClearBackground", 1)
+	DrawRectangle_fn := js.NewRawFunction(ctx, js.native_to_raw_function(js_DrawRectangle), "DrawRectangle", 1)
 
-	js.SetPropertyStr(ctx, global_obj, "ClearBackground", ClearBackground_fn)
-	js.SetPropertyStr(ctx, global_obj, "DrawRectangle", DrawRectangle_fn)
+	js.SetPropertyCStr(ctx, global_obj, "ClearBackground", ClearBackground_fn)
+	js.SetPropertyCStr(ctx, global_obj, "DrawRectangle", DrawRectangle_fn)
 }

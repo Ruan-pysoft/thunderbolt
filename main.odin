@@ -12,7 +12,7 @@ import "core:time"
 
 import rl "vendor:raylib"
 
-import js "vendor/quickjs"
+import js "vendor/quickjs_odin"
 
 // Following the following tutorial:
 // https://healeycodes.com/building-a-runtime-with-quickjs
@@ -24,7 +24,7 @@ Timer :: struct {
 }
 
 Runtime_State :: struct {
-	ctx: runtime.Context,
+	using _: js.Context_Wrapper,
 	startup_time: time.Tick,
 
 	next_timer_id: int,
@@ -70,13 +70,7 @@ run_file :: proc(ctx: js.Context, file: string) -> (exit_code: int) {
 		return 1;
 	}
 
-	result = js.Eval(
-		ctx,
-		raw_data(file_data),
-		len(file_data),
-		path,
-		{ type = .Global },
-	)
+	result = js.Eval(ctx, cast(string) file_data, path, { type = .Global })
 
 	if js.IsException(result) {
 		dump_exception(ctx)
@@ -90,71 +84,39 @@ run_file :: proc(ctx: js.Context, file: string) -> (exit_code: int) {
 dump_exception :: proc(ctx: js.Context) {
 	exception := js.GetException(ctx)
 	defer js.FreeValue(ctx, exception)
-	stack := js.GetPropertyStr(ctx, exception, "stack")
+	stack := js.GetPropertyCStr(ctx, exception, "stack")
 	defer js.FreeValue(ctx, stack)
-	message := transmute([^]u8) js.ToCString(ctx, exception)
-	defer if message != nil do js.FreeCString(ctx, transmute(cstring) message)
-	stack_text: [^]u8
-	defer if stack_text != nil do js.FreeCString(ctx, transmute(cstring) stack_text)
+	message, has_message := js.ToString(ctx, exception)
+	defer if has_message do delete(message)
+	stack_text: string
+	has_stack_text: bool
+	defer if has_stack_text do delete(stack_text)
 
 	if !js.IsUndefined(stack) && !js.IsNull(stack) {
-		stack_text = transmute([^]u8) js.ToCString(ctx, stack)
+		stack_text, has_stack_text = js.ToString(ctx, stack)
 	}
 
-	if message != nil && message[0] != 0 {
-		fmt.eprintln(transmute(cstring) message)
-	} else if stack_text == nil || stack_text[0] == 0 {
+	if len(message) != 0 {
+		fmt.eprintln(message)
+	} else if len(stack_text) == 0 {
 		fmt.eprintln("JavaScript exception")
 	}
 
-	if stack_text != nil && stack_text[0] != 0 {
-		if message == nil || message[0] == 0 || string(transmute(cstring) message) != string(transmute(cstring) stack_text) {
-			fmt.eprintln(transmute(cstring) stack_text)
+	if len(stack_text) != 0 {
+		if len(message) == 0 || message != stack_text {
+			fmt.eprintln(stack_text)
 		}
 	}
-}
-
-Odin_Function_Stateful :: #type proc(ctx: js.Context, state: ^Runtime_State, this: js.Value_Const, args: ..js.Value_Const) -> js.Value
-Odin_Function_Stateless :: #type proc(ctx: js.Context, this: js.Value_Const, args: ..js.Value_Const) -> js.Value
-to_js_c_function_stateful :: proc($fn: Odin_Function_Stateful) -> js.C_Function {
-	js_c_func :: proc"c"(ctx: js.Context, this_val: js.Value_Const, argc: c.int, argv: [^]js.Value_Const) -> js.Value {
-		state := cast(^Runtime_State) js.GetRuntimeOpaque(js.GetRuntime(ctx))
-
-		context = state.ctx
-
-		args := slice.from_ptr(argv, int(argc))
-
-		return fn(ctx, state, this_val, ..args)
-	}
-
-	return js_c_func
-}
-to_js_c_function_stateless :: proc($fn: Odin_Function_Stateless) -> js.C_Function {
-	js_c_func :: proc"c"(ctx: js.Context, this_val: js.Value_Const, argc: c.int, argv: [^]js.Value_Const) -> js.Value {
-		state := cast(^Runtime_State) js.GetRuntimeOpaque(js.GetRuntime(ctx))
-
-		context = state.ctx
-
-		args := slice.from_ptr(argv, int(argc))
-
-		return fn(ctx, this_val, ..args)
-	}
-
-	return js_c_func
-}
-to_js_c_function :: proc {
-	to_js_c_function_stateful,
-	to_js_c_function_stateless,
 }
 
 js_console_log :: proc(ctx: js.Context, this: js.Value_Const, args: ..js.Value_Const) -> js.Value {
 	for arg, i in args {
 		if i > 0 do fmt.print(' ')
 
-		string_value := js.ToString(ctx, arg)
+		string_value := js.ToStringValue(ctx, arg)
 		defer js.FreeValue(ctx, string_value)
-		text := js.ToCString(ctx, string_value)
-		defer js.FreeCString(ctx, text)
+		text, has_text := js.ToString(ctx, string_value)
+		defer if has_text do delete(text)
 
 		fmt.print(text)
 	}
@@ -168,10 +130,10 @@ install_console :: proc(ctx: js.Context) {
 	global_obj := js.GetGlobalObject(ctx)
 	defer js.FreeValue(ctx, global_obj)
 	console_obj := js.NewObject(ctx)
-	log_fn := js.NewCFunction(ctx, to_js_c_function(js_console_log), "log", 1)
+	log_fn := js.NewRawFunction(ctx, js.native_to_raw_function(js_console_log), "log", 0)
 
-	js.SetPropertyStr(ctx, console_obj, "log", log_fn)
-	js.SetPropertyStr(ctx, global_obj, "console", console_obj)
+	js.SetPropertyCStr(ctx, console_obj, "log", log_fn)
+	js.SetPropertyCStr(ctx, global_obj, "console", console_obj)
 }
 
 install_runtime :: proc(rt: js.Runtime, state: ^Runtime_State) {
@@ -195,17 +157,17 @@ js_process_uptime :: proc(ctx: js.Context, state: ^Runtime_State, this_val: js.V
 
 	uptime_nanos := time.tick_diff(state.startup_time, now)
 
-	return js.NewFloat64(ctx, f64(uptime_nanos) / f64(time.Second))
+	return js.NewF64(ctx, f64(uptime_nanos) / f64(time.Second))
 }
 
 install_process :: proc(ctx: js.Context) {
 	global_obj := js.GetGlobalObject(ctx)
 	defer js.FreeValue(ctx, global_obj)
 	process_obj := js.NewObject(ctx)
-	uptime_fn := js.NewCFunction(ctx, to_js_c_function(js_process_uptime), "uptime", 1)
+	uptime_fn := js.NewRawFunction(ctx, js.native_to_raw_function(js_process_uptime), "uptime", 0)
 
-	js.SetPropertyStr(ctx, process_obj, "uptime", uptime_fn)
-	js.SetPropertyStr(ctx, global_obj, "process", process_obj)
+	js.SetPropertyCStr(ctx, process_obj, "uptime", uptime_fn)
+	js.SetPropertyCStr(ctx, global_obj, "process", process_obj)
 }
 
 js_set_timeout :: proc(ctx: js.Context, state: ^Runtime_State, this_val: js.Value_Const, args: ..js.Value_Const) -> js.Value {
@@ -213,18 +175,18 @@ js_set_timeout :: proc(ctx: js.Context, state: ^Runtime_State, this_val: js.Valu
 
 	// TODO: throw exception, don't assert
 	assert(len(args) == 2)
-	assert(js.IsFunction(ctx, args[0]) != 0)
+	assert(js.IsFunction(ctx, args[0]))
 	assert(js.IsNumber(args[1]))
 
 	delay: time.Duration
-	if js.value_get_tag(args[1]) == .Float64 {
-		delay_ms: f64
-		assert(js.ToFloat64(ctx, &delay_ms, args[1]) == 0)
+	if js.tag_of(args[1]) == .Float64 {
+		delay_ms, ok := js.ToF64(ctx, args[1])
+		assert(ok)
 		delay = time.Duration(f64(time.Millisecond) * delay_ms)
 	} else {
-		delay_ms: i64
-		assert(js.ToInt64(ctx, &delay_ms, args[1]) == 0)
-		delay = time.Duration(i64(time.Millisecond) * delay_ms)
+		delay_ms, ok := js.ToInt(ctx, args[1])
+		assert(ok)
+		delay = time.Duration(int(time.Millisecond) * delay_ms)
 	}
 
 	timer.id = state.next_timer_id
@@ -233,19 +195,15 @@ js_set_timeout :: proc(ctx: js.Context, state: ^Runtime_State, this_val: js.Valu
 	timer.callback = js.DupValue(ctx, args[0])
 
 	priority_queue.push(&state.timers, timer)
-	return js.NewInt32(ctx, i32(timer.id))
+	return js.NewInt(ctx, timer.id)
 }
 js_clear_timeout :: proc(ctx: js.Context, state: ^Runtime_State, this_val: js.Value_Const, args: ..js.Value_Const) -> js.Value {
 	// TODO: throw exception, don't assert
 	assert(len(args) == 1)
 	assert(js.IsNumber(args[0]))
 
-	id: int
-	{
-		id32: i32
-		assert(js.ToInt32(ctx, &id32, args[0]) == 0)
-		id = int(id32)
-	}
+	id, ok := js.ToInt(ctx, args[0])
+	assert(ok)
 	for timer, ix in state.timers.queue {
 		if timer.id == id {
 			js.FreeValue(ctx, timer.callback)
@@ -261,15 +219,15 @@ js_clear_timeout :: proc(ctx: js.Context, state: ^Runtime_State, this_val: js.Va
 install_globals :: proc(ctx: js.Context) {
 	global_obj := js.GetGlobalObject(ctx)
 	defer js.FreeValue(ctx, global_obj)
-	set_timeout_fn := js.NewCFunction(ctx, to_js_c_function(js_set_timeout), "setTimeout", 1)
-	clear_timeout_fn := js.NewCFunction(ctx, to_js_c_function(js_clear_timeout), "clearTimeout", 1)
+	set_timeout_fn := js.NewRawFunction(ctx, js.native_to_raw_function(js_set_timeout), "setTimeout", 2)
+	clear_timeout_fn := js.NewRawFunction(ctx, js.native_to_raw_function(js_clear_timeout), "clearTimeout", 1)
 
-	js.SetPropertyStr(ctx, global_obj, "setTimeout", set_timeout_fn)
-	js.SetPropertyStr(ctx, global_obj, "clearTimeout", clear_timeout_fn)
+	js.SetPropertyCStr(ctx, global_obj, "setTimeout", set_timeout_fn)
+	js.SetPropertyCStr(ctx, global_obj, "clearTimeout", clear_timeout_fn)
 }
 
 run_expired_timers :: proc(ctx: js.Context) -> (ok: bool) {
-	state := cast(^Runtime_State) js.GetRuntimeOpaque(js.GetRuntime(ctx))
+	state := js.GetRuntimeOpaque(^Runtime_State, js.GetRuntime(ctx))
 
 	now := time.tick_now()
 
@@ -279,7 +237,7 @@ run_expired_timers :: proc(ctx: js.Context) -> (ok: bool) {
 
 		priority_queue.pop(&state.timers)
 
-		result := js.Call(ctx, timer.callback, js.UNDEFINED, 0, nil)
+		result := js.Call(ctx, timer.callback, js.UNDEFINED)
 		defer js.FreeValue(ctx, result)
 
 		js.FreeValue(ctx, timer.callback)
@@ -298,9 +256,8 @@ run_expired_timers :: proc(ctx: js.Context) -> (ok: bool) {
 drain_pending_jobs :: proc(rt: js.Runtime) -> (ok: bool) {
 	ctx: js.Context
 
-	for js.IsJobPending(rt) != 0 {
-		ret := js.ExecutePendingJob(rt, &ctx)
-		if ret < 0 {
+	for js.IsJobPending(rt) {
+		if !js.ExecutePendingJob(rt, &ctx) {
 			dump_exception(ctx)
 			return false
 		}
@@ -311,10 +268,10 @@ drain_pending_jobs :: proc(rt: js.Runtime) -> (ok: bool) {
 
 run_event_loop :: proc(ctx: js.Context) -> (ok: bool) {
 	rt := js.GetRuntime(ctx)
-	state := cast(^Runtime_State) js.GetRuntimeOpaque(rt)
+	state := js.GetRuntimeOpaque(^Runtime_State, rt)
 
 	window_should_close := false
-	for priority_queue.len(state.timers) != 0 || runtime_has_async_work(state) || js.IsJobPending(rt) != 0 || !window_should_close {
+	for priority_queue.len(state.timers) != 0 || runtime_has_async_work(state) || js.IsJobPending(rt) || !window_should_close {
 		run_expired_timers(ctx)
 		run_completed_file_jobs(ctx)
 		drain_pending_jobs(rt)
@@ -323,7 +280,7 @@ run_event_loop :: proc(ctx: js.Context) -> (ok: bool) {
 			raylib_run_eventloop(ctx)
 		}
 
-		if priority_queue.len(state.timers) == 0 && !runtime_has_async_work(state) && js.IsJobPending(rt) == 0 && window_should_close {
+		if priority_queue.len(state.timers) == 0 && !runtime_has_async_work(state) && !js.IsJobPending(rt) && window_should_close {
 			break
 		}
 	}
