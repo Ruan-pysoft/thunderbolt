@@ -238,6 +238,7 @@ IsUndefined     :: qjs.IsUndefined
 IsException     :: qjs.IsException
 IsUninitialized :: qjs.IsUninitialized
 IsString        :: qjs.IsString
+IsObject        :: qjs.IsObject
 IsFunction      :: proc"contextless"(ctx: Context, val: Value_Const) -> bool {
 	return qjs.IsFunction(ctx, val) != 0
 }

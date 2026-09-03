@@ -418,6 +418,9 @@ IsUninitialized :: #force_inline proc"contextless"(v: Value_Const) -> bool {
 IsString :: #force_inline proc"contextless"(v: Value_Const) -> bool {
 	return value_get_tag(v) == .String || value_get_tag(v) == .StringRope
 }
+IsObject :: #force_inline proc"contextless"(v: Value_Const) -> bool {
+	return value_get_tag(v) == .Object
+}
 
 @(private)
 _rc :: #force_inline proc"contextless"(ptr: rawptr) -> ^Ref_Count_Header {

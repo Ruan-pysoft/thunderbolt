@@ -55,14 +55,12 @@ raylib_start :: proc(ctx: js.Context) {
 
 	window_width: c.int = 800
 	if js.IsNumber(js_window_width) {
-		fmt.eprintln("width is number")
 		res, ok := js.ToInt(ctx, js_window_width)
 		assert(ok)
 		window_width = c.int(res)
 	} else if !js.IsUndefined(js_window_width) {
 		fmt.eprintln("WARNING: `window_width` should be initialised with a number, defaulting to 800")
 	} else {
-		fmt.eprintln("width is not number")
 		v := js.NewInt(ctx, int(window_width))
 		js.SetPropertyCStr(ctx, global_obj, "window_width", v)
 	}
@@ -127,49 +125,25 @@ raylib_run_eventloop :: proc(ctx: js.Context) {
 
 js_ClearBackground :: proc(ctx: js.Context, this: js.Value_Const, args: ..js.Value_Const) -> js.Value {
 	// TODO: throw exception, don't assert
-	assert(len(args) == 3)
-	assert(js.IsNumber(args[0]))
-	assert(js.IsNumber(args[1]))
-	assert(js.IsNumber(args[2]))
+	assert(len(args) == 1)
+	assert(js.IsObject(args[0]))
+	args0_class, args0_class_ok := js.GetClassID(args[0])
+	assert(args0_class_ok && args0_class == color_class_id)
 
-	// TODO: support alpha argumet
-	// TODO: handle float in range [0.0, 1.0] and int in range [0, 255] different
-	// TODO: range checks
-	// TODO: Color type?
-
-	i: int
-	ok: bool
-
-	i, ok = js.ToInt(ctx, args[0])
-	assert(ok)
-	r := u8(i)
-	i, ok = js.ToInt(ctx, args[1])
-	assert(ok)
-	g := u8(i)
-	i, ok = js.ToInt(ctx, args[2])
-	assert(ok)
-	b := u8(i)
-
-	rl.ClearBackground({ r, g, b, 255 })
+	rl.ClearBackground(_get_color(ctx, args[0]))
 
 	return js.UNDEFINED
 }
 
 js_DrawRectangle :: proc(ctx: js.Context, this: js.Value_Const, args: ..js.Value_Const) -> js.Value {
 	// TODO: throw exception, don't assert
-	assert(len(args) == 7)
+	assert(len(args) == 5)
 	assert(js.IsNumber(args[0]))
 	assert(js.IsNumber(args[1]))
 	assert(js.IsNumber(args[2]))
 	assert(js.IsNumber(args[3]))
-	assert(js.IsNumber(args[4]))
-	assert(js.IsNumber(args[5]))
-	assert(js.IsNumber(args[6]))
-
-	// TODO: support alpha argumet
-	// TODO: handle float in range [0.0, 1.0] and int in range [0, 255] different
-	// TODO: range checks
-	// TODO: Color type?
+	args4_class, args4_class_ok := js.GetClassID(args[4])
+	assert(args4_class_ok && args4_class == color_class_id)
 
 	i: int
 	ok: bool
@@ -186,17 +160,8 @@ js_DrawRectangle :: proc(ctx: js.Context, this: js.Value_Const, args: ..js.Value
 	i, ok = js.ToInt(ctx, args[3])
 	assert(ok)
 	height := c.int(i)
-	i, ok = js.ToInt(ctx, args[4])
-	assert(ok)
-	r := u8(i)
-	i, ok = js.ToInt(ctx, args[5])
-	assert(ok)
-	g := u8(i)
-	i, ok = js.ToInt(ctx, args[6])
-	assert(ok)
-	b := u8(i)
 
-	rl.DrawRectangle(x, y, width, height, { r, g, b, 255 })
+	rl.DrawRectangle(x, y, width, height, _get_color(ctx, args[4]))
 
 	return js.UNDEFINED
 }
@@ -219,6 +184,10 @@ color_class_def := js.Class_Def {
 }
 _get_color :: proc"contextless"(ctx: js.Context, color_obj: js.Value_Const) -> rl.Color {
 	// TODO: ...
+	assert_contextless(js.IsObject(color_obj))
+	obj_class, obj_class_ok := js.GetClassID(color_obj)
+	assert_contextless(obj_class_ok && obj_class == color_class_id)
+
 	raw_color := js.GetPropertyCStr(ctx, color_obj, "__raw_color")
 	assert_contextless(js.tag_of(raw_color) == .Int)
 
@@ -229,6 +198,10 @@ _get_color :: proc"contextless"(ctx: js.Context, color_obj: js.Value_Const) -> r
 }
 _set_color :: proc"contextless"(ctx: js.Context, color_obj: js.Value_Const, color: rl.Color) {
 	// TODO: ...
+	assert_contextless(js.IsObject(color_obj))
+	obj_class, obj_class_ok := js.GetClassID(color_obj)
+	assert_contextless(obj_class_ok && obj_class == color_class_id)
+
 	raw_color := ColorToRawValue(ctx, color)
 
 	js.SetPropertyCStr(ctx, color_obj, "__raw_color", raw_color)

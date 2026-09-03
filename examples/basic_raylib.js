@@ -5,6 +5,9 @@ var rect_dx = rect_xy_vel;
 var rect_dy = rect_xy_vel;
 const rect_size = 42;
 
+var bg_color = new Color(20, 50, 100)
+var rect_color = new Color(200, 15, 15)
+
 function update() {
 	if (rect_x === null) {
 		rect_x = window_width/2 - rect_size/2;
@@ -50,17 +53,14 @@ function update() {
 }
 
 function draw() {
-	ClearBackground(bg_color.r, bg_color.g, bg_color.b)
+	ClearBackground(bg_color)
 
-	DrawRectangle(rect_x, rect_y, rect_size, rect_size, rect_color.r, rect_color.g, rect_color.b)
+	DrawRectangle(rect_x, rect_y, rect_size, rect_size, rect_color)
 }
 
 var window_title = "Hello from JS!";
 var window_width = 640;
 var window_height = 480;
 
-var bg_color = new Color(20, 50, 100)
-var rect_color = new Color(200, 15, 15)
 console.log("bg_color:", bg_color)
 console.log("rect_color:", rect_color)
-console.log("bg_color:", Object.prototype.toString.call(bg_color))
