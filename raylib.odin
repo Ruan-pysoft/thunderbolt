@@ -2,6 +2,7 @@ package thunderbolt
 
 import "core:c"
 import "core:fmt"
+import "core:strings"
 
 import rl "vendor:raylib"
 
@@ -17,7 +18,24 @@ IsRawColor :: proc(v: js.Value_Const) -> bool {
 	return js.tag_of(v) == .Int
 }
 
-raylib_start :: proc(ctx: js.Context) {
+DEFAULT_FPS :: c.int(16)
+DEFAULT_WIDTH :: c.int(800)
+DEFAULT_HEIGHT :: c.int(600)
+DEFAULT_TITLE :: cstring("THUNDERBOLT_TITLE")
+
+Raylib_Properties :: struct {
+	fps: c.int,
+	width, height: c.int,
+	title: cstring,
+}
+
+DEFAULT_PROPERTIES :: Raylib_Properties {
+	DEFAULT_FPS,
+	DEFAULT_WIDTH, DEFAULT_HEIGHT,
+	DEFAULT_TITLE,
+}
+
+raylib_fetch_properties :: proc(ctx: js.Context) -> (props: Raylib_Properties, must_free_title: bool) {
 	global_obj := js.GetGlobalObject(ctx)
 	defer js.FreeValue(ctx, global_obj)
 
@@ -30,7 +48,7 @@ raylib_start :: proc(ctx: js.Context) {
 	js_window_height := js.GetPropertyCStr(ctx, global_obj, "window_height")
 	defer js.FreeValue(ctx, js_window_height)
 
-	target_fps: c.int = 60
+	target_fps := DEFAULT_FPS
 	if js.IsNumber(js_target_fps) {
 		res, ok := js.ToInt(ctx, js_target_fps)
 		assert(ok)
@@ -42,8 +60,8 @@ raylib_start :: proc(ctx: js.Context) {
 		js.SetPropertyCStr(ctx, global_obj, "fps", v)
 	}
 
-	window_name: cstring = "THUNDERBOLT WINDOW"
-	defer if js.IsString(js_window_name) do js.FreeCString(ctx, window_name)
+	window_name := DEFAULT_TITLE
+	must_free_title = js.IsString(js_window_name)
 	if js.IsString(js_window_name) {
 		window_name = js.ToCString(ctx, js_window_name)
 	} else if !js.IsUndefined(js_window_name) {
@@ -53,7 +71,7 @@ raylib_start :: proc(ctx: js.Context) {
 		js.SetPropertyCStr(ctx, global_obj, "window_title", v)
 	}
 
-	window_width: c.int = 800
+	window_width := DEFAULT_WIDTH
 	if js.IsNumber(js_window_width) {
 		res, ok := js.ToInt(ctx, js_window_width)
 		assert(ok)
@@ -65,7 +83,7 @@ raylib_start :: proc(ctx: js.Context) {
 		js.SetPropertyCStr(ctx, global_obj, "window_width", v)
 	}
 
-	window_height: c.int = 600
+	window_height := DEFAULT_HEIGHT
 	if js.IsNumber(js_window_height) {
 		res, ok := js.ToInt(ctx, js_window_height)
 		assert(ok)
@@ -77,8 +95,44 @@ raylib_start :: proc(ctx: js.Context) {
 		js.SetPropertyCStr(ctx, global_obj, "window_height", v)
 	}
 
-	rl.SetTargetFPS(target_fps)
-	rl.InitWindow(window_width, window_height, window_name)
+	return {
+		fps = target_fps,
+		width = window_width,
+		height = window_height,
+		title = window_name,
+	}, must_free_title
+}
+raylib_update_properties :: proc(ctx: js.Context) {
+	@(static) old: Raylib_Properties
+
+	props, must_free_title := raylib_fetch_properties(ctx)
+
+	if props.fps != old.fps {
+		rl.SetTargetFPS(props.fps)
+		old.fps = props.fps
+	}
+
+	if props.width != old.width || props.height != old.height {
+		rl.SetWindowSize(props.width, props.height)
+		old.width, old.height = props.width, props.height
+	}
+
+	if props.title != old.title && must_free_title {
+		rl.SetWindowTitle(props.title)
+		if old.title != nil do js.FreeCString(ctx, old.title)
+		old.title = props.title
+	} else if must_free_title do js.FreeCString(ctx, props.title)
+}
+
+raylib_start :: proc(ctx: js.Context) {
+	global_obj := js.GetGlobalObject(ctx)
+	defer js.FreeValue(ctx, global_obj)
+
+	props, must_free_title := raylib_fetch_properties(ctx)
+	defer if must_free_title do js.FreeCString(ctx, props.title)
+
+	rl.SetTargetFPS(props.fps)
+	rl.InitWindow(props.width, props.height, props.title)
 }
 
 raylib_end :: proc() {
@@ -91,6 +145,9 @@ raylib_run_eventloop :: proc(ctx: js.Context) {
 
 	js_update_fn := js.GetPropertyCStr(ctx, global_obj, "update")
 	defer js.FreeValue(ctx, js_update_fn)
+
+	raylib_update_properties(ctx)
+
 	js_draw_fn := js.GetPropertyCStr(ctx, global_obj, "draw")
 	defer js.FreeValue(ctx, js_draw_fn)
 
@@ -174,6 +231,11 @@ install_raylib :: proc(ctx: js.Context) {
 
 	js.SetPropertyCStr(ctx, global_obj, "ClearBackground", ClearBackground_fn)
 	js.SetPropertyCStr(ctx, global_obj, "DrawRectangle", DrawRectangle_fn)
+
+	js.SetPropertyCStr(ctx, global_obj, "fps", js.NewInt(ctx, int(DEFAULT_FPS)))
+	js.SetPropertyCStr(ctx, global_obj, "window_width", js.NewInt(ctx, int(DEFAULT_WIDTH)))
+	js.SetPropertyCStr(ctx, global_obj, "window_height", js.NewInt(ctx, int(DEFAULT_HEIGHT)))
+	js.SetPropertyCStr(ctx, global_obj, "window_title", js.NewString(ctx, DEFAULT_TITLE))
 
 	define_color_class(js.GetRuntime(ctx), ctx, global_obj)
 }

@@ -58,9 +58,9 @@ function draw() {
 	DrawRectangle(rect_x, rect_y, rect_size, rect_size, rect_color)
 }
 
-var window_title = "Hello from JS!";
-var window_width = 640;
-var window_height = 480;
+window_title = "Hello from JS!";
+window_width = 640;
+window_height = 480;
 
 console.log("bg_color:", bg_color)
 console.log("rect_color:", rect_color)
