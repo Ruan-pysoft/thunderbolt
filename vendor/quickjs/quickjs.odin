@@ -118,6 +118,44 @@ TRUE          := mkval(.Bool, 1)
 EXCEPTION     := mkval(.Exception, 0)
 UNINITIALIZED := mkval(.Uninitialized, 0)
 
+GC_Object_Header :: distinct rawptr
+
+Mark_Func             :: #type proc(rt: Runtime, gp: GC_Object_Header)
+Class_Finalizer       :: #type proc"c"(rt: Runtime, val: Value)
+Class_GC_Mark         :: #type proc"c"(rt: Runtime, val: Value_Const, mark_func: Mark_Func)
+CALL_FLAG_CONSTRUCTOR :: 1<<0
+Class_Call            :: #type proc"c"(ctx: Context, func_obj: Value_Const, this: Value_Const, argc: c.int, argv: [^]Value_Const, flags: c.int)
+Property_Enum         :: struct {
+	is_enumerable: Bool,
+	atom: Atom,
+}
+Property_Descriptor   :: struct {
+	flags: c.int,
+	value: Value,
+	getter: Value,
+	Setter: Value,
+}
+Class_Exotic_Methods  :: struct {
+	get_own_property: proc"c"(ctx: Context, desc: ^Property_Descriptor, obj: Value_Const, prop: Atom) -> c.int,
+	get_own_property_names: proc"c"(ctx: Context, ptab: ^^Property_Enum, plen: ^c.uint32_t, obj: Value_Const) -> c.int,
+	delete_property: proc"c"(ctx: Context, obj: Value_Const, prop: Atom) -> c.int,
+	define_own_property: proc"c"(ctx: Context, this: Value_Const, prop: Atom, val: Value_Const, getter: Value_Const, setter: Value_Const, flags: c.int) -> c.int,
+	has_property: proc"c"(ctx: Context, obj: Value_Const, atom: Atom) -> c.int,
+	get_property: proc"c"(ctx: Context, obj: Value_Const, atom: Atom, receiver: Value_Const) -> Value,
+	set_property: proc"c"(ctx: Context, obj: Value_Const, atom: Atom, value: Value_Const, receiver: Value_Const, flags: c.int) -> c.int,
+	get_prototype: proc"c"(ctx: Context, obj: Value_Const) -> Value,
+	set_prototype: proc"c"(ctx: Context, obj: Value_Const, proto_val: Value_Const) -> c.int,
+	is_extensible: proc"c"(ctx: Context, obj: Value_Const) -> c.int,
+	prevent_extensions: proc"c"(ctx: Context, obj: Value_Const) -> c.int,
+}
+Class_Def             :: struct {
+	class_name: cstring,
+	finalizer: Class_Finalizer,
+	gc_mark: Class_GC_Mark,
+	call: Class_Call,
+	exotic: Class_Exotic_Methods,
+}
+
 Eval_Type :: enum c.int {
 	Global   = 0,
 	Module   = 1,
@@ -154,6 +192,105 @@ C_Function_Enum :: enum c.int {
 	iterator_next,
 }
 
+C_Function_Type :: struct #raw_union {
+	generic: C_Function,
+	generic_magic: proc"c"(ctx: Context, this_val: Value_Const, argc: c.int, argv: [^]Value_Const, magic: c.int) -> Value,
+	constructor: C_Function,
+	constructor_magic: proc"c"(ctx: Context, this_val: Value_Const, argc: c.int, argv: [^]Value_Const, magic: c.int) -> Value,
+	constructor_or_func: C_Function,
+	f_f: proc"c"(c.double) -> c.double,
+	f_f_f: proc"c"(c.double, c.double) -> c.double,
+	getter: proc"c"(ctx: Context, this_val: Value_Const) -> Value,
+	setter: proc"c"(ctx: Context, this_val: Value_Const, val: Value_Const) -> Value,
+	getter_magic: proc"c"(ctx: Context, this_val: Value_Const, magic: c.int) -> Value,
+	setter_magic: proc"c"(ctx: Context, this_val: Value_Const, val: Value_Const, magic: c.int) -> Value,
+	iterator_next: proc"c"(ctx: Context, this_val: Value_Const, val: Value_Const, magic: c.int) -> Value,
+}
+PROP_CONFIGURABLE :: 1<<0
+PROP_WRITABLE     :: 1<<1
+PROP_ENUMERABLE   :: 1<<2
+PROP_C_W_E        :: PROP_CONFIGURABLE | PROP_WRITABLE | PROP_ENUMERABLE
+PROP_LENGTH       :: 1<<3
+PROP_TMASK        :: 3<<4
+PROP_NORMAL       :: 0<<4
+PROP_GETSET       :: 1<<4
+PROP_VARREF       :: 2<<4
+PROP_AUTOINIT     :: 3<<4
+/*...*/
+/*...*/
+PROP_THROW        :: 1<<14
+PROP_THROW_STRICT :: 1<<15
+C_Function_List_Entry :: struct {
+	name: cstring,
+	prop_flags: c.uint8_t,
+	def_type: c.uint8_t,
+	magic: c.uint16_t,
+	u: struct #raw_union {
+		func: struct {
+			length: c.uint8_t,
+			cproto: c.uint8_t,
+			cfunc: C_Function_Type,
+		},
+		getset: struct {
+			get: C_Function_Type,
+			set: C_Function_Type,
+		},
+		alias: struct {
+			name: cstring,
+			base: c.int,
+		},
+		prop_list: struct {
+			tab: [^]C_Function_List_Entry,
+			len: c.int,
+		},
+		str: cstring,
+		i32: c.int32_t,
+		i64: c.int64_t,
+		f64: c.double,
+	},
+}
+
+DEF_CFUNC          :: 0
+DEF_CGETSET        :: 1
+DEF_CGETSET_MAGIC  :: 2
+DEF_PROP_STRING    :: 3
+DEF_PROP_INT32     :: 4
+DEF_PROP_INT64     :: 5
+DEF_PROP_DOUBLE    :: 6
+DEF_PROP_UNDEFINED :: 7
+DEF_OBJECT         :: 8
+DEF_ALIAS          :: 9
+DEF_PROP_ATOM      :: 10
+DEF_PROP_BOOL      :: 11
+
+cfunc_def :: #force_inline proc"contextless"(name: cstring, len: c.int, func1: C_Function) -> C_Function_List_Entry {
+	return {
+		name,
+		PROP_WRITABLE | PROP_CONFIGURABLE,
+		DEF_CFUNC,
+		0,
+		{ func = {
+			u8(len),
+			u8(C_Function_Enum.generic),
+			{ generic = func1 },
+		} },
+	}
+}
+cgetset_def :: #force_inline proc"contextless"(name: cstring, fgetter: proc"c"(ctx: Context, this_val: Value_Const) -> Value, fsetter: proc"c"(ctx: Context, this_val: Value_Const, val: Value_Const) -> Value) -> C_Function_List_Entry {
+	return {
+		name,
+		PROP_CONFIGURABLE,
+		DEF_CGETSET,
+		0,
+		{ getset = {
+			get = { getter = fgetter },
+			set = { setter = fsetter },
+		} },
+	}
+}
+
+INVALID_CLASS_ID :: Class_Id(0)
+
 @(link_prefix="JS_")
 foreign quickjs {
 	NewRuntime :: proc() -> Runtime ---
@@ -163,11 +300,26 @@ foreign quickjs {
 
 	NewContext :: proc(rt: Runtime) -> Context ---
 	FreeContext :: proc(s: Context) ---
+	DupContext :: proc(ctx: Context) -> Context ---
+	GetContextOpaque :: proc(ctx: Context) -> rawptr ---
+	SetContextOpaque :: proc(ctx: Context, opaque: rawptr) ---
 	GetRuntime :: proc(ctx: Context) -> Runtime ---
+	SetClassProto :: proc(ctx: Context, class_id: Class_Id, obj: Value) ---
+	GetClassProto :: proc(ctx: Context, class_id: Class_Id) -> Value ---
+
+	ValueToAtom :: proc(ctx: Context, val: Value_Const) -> Atom ---
+
+	NewClassID :: proc(pclass_id: ^Class_Id) -> Class_Id ---
+	GetClassID :: proc(v: Value) -> Class_Id ---
+	NewClass :: proc(rt: Runtime, class_id: Class_Id, #by_ptr class_def: Class_Def) -> c.int ---
 
 	GetException :: proc(ctx: Context) -> Value ---
 
+	@(private)
+	GetPropertyInternal :: proc(ctx: Context, obj: Value_Const, prop: Atom, receiver: Value_Const, throw_ref_error: Bool) -> Value ---
 	GetPropertyStr :: proc(ctx: Context, this_obj: Value_Const, prop: cstring) -> Value ---
+	@(private)
+	SetPropertyInternal :: proc(ctx: Context, obj: Value_Const, prop: Atom, val: Value, this_obj: Value_Const, flags: c.int) -> c.int ---
 	SetPropertyStr :: proc(ctx: Context, this_obj: Value_Const, prop: cstring, val: Value) -> int ---
 
 	NewStringLen :: proc(ctx: Context, str1: cstring, len1: c.size_t) -> Value ---
@@ -176,6 +328,9 @@ foreign quickjs {
 	FreeCString :: proc(ctx: Context, ptr: cstring) ---
 
 	NewObject :: proc(ctx: Context) -> Value ---
+	NewObjectClass :: proc(ctx: Context, class_id: c.int) -> Value ---
+	NewBigInt64 :: proc(ctx: Context, v: c.int64_t) -> Value ---
+	NewBigUint64 :: proc(ctx: Context, v: c.uint64_t) -> Value ---
 
 	IsFunction :: proc(ctx: Context, val: Value_Const) -> Bool ---
 
@@ -196,6 +351,9 @@ foreign quickjs {
 
 	NewCFunction2 :: proc(ctx: Context, func: C_Function, name: cstring, length: c.int, cproto: C_Function_Enum, magic: c.int) -> Value ---
 	NewCFunctionData :: proc(ctx: Context, func: C_Function_Data, length: c.int, magic: c.int, data_len: c.int, data: ^Value_Const) -> Value ---
+	SetConstructor :: proc(ctx: Context, func_obj: Value_Const, proto: Value_Const) -> c.int ---
+
+	SetPropertyFunctionList :: proc(ctx: Context, obj: Value_Const, tab: [^]C_Function_List_Entry, len: c.int) -> c.int ---
 }
 
 @(link_prefix="__JS")
@@ -239,6 +397,10 @@ IsNumber :: #force_inline proc"contextless"(v: Value_Const) -> bool {
 	tag := value_get_tag(v)
 	return tag == .Int || tag == .Float64
 }
+IsBigInt :: #force_inline proc"contextless"(ctx: Context, v: Value_Const) -> bool {
+	tag := value_get_tag(v)
+	return tag == .BigInt || tag == .ShortBigInt
+}
 IsNull :: #force_inline proc"contextless"(v: Value_Const) -> bool {
 	return value_get_tag(v) == .Undefined
 }
@@ -281,6 +443,13 @@ DupValue :: #force_inline proc"contextless"(ctx: Context, v: Value) -> Value {
 
 ToUint32 :: #force_inline proc"contextless"(ctx: Context, pres: ^u32, val: Value_Const) -> c.int {
 	return ToInt32(ctx, cast(^i32)pres, val)
+}
+
+GetProperty :: #force_inline proc"contextless"(ctx: Context, this_obj: Value_Const, prop: Atom) -> Value {
+	return GetPropertyInternal(ctx, this_obj, prop, this_obj, 0)
+}
+SetProperty :: #force_inline proc"contextless"(ctx: Context, this_obj: Value_Const, prop: Atom, val: Value) -> c.int {
+	return SetPropertyInternal(ctx, this_obj, prop, val, this_obj, PROP_THROW)
 }
 
 NewString :: #force_inline proc"contextless"(ctx: Context, str: cstring) -> Value {
