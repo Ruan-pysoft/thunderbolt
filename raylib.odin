@@ -173,10 +173,20 @@ raylib_run_eventloop :: proc(ctx: js.Context) {
 		panic("no draw function")
 	}
 
-	js.FreeValue(ctx, js.Call(ctx, js_update_fn, js.UNDEFINED))
+	update_res := js.Call(ctx, js_update_fn, js.UNDEFINED)
+	defer js.FreeValue(ctx, update_res)
+	if js.IsException(update_res) {
+		dump_exception(ctx)
+		panic("exception hit!")
+	}
 
 	{ rl.BeginDrawing()
-		js.FreeValue(ctx, js.Call(ctx, js_draw_fn, js.UNDEFINED))
+		draw_res := js.Call(ctx, js_draw_fn, js.UNDEFINED)
+		defer js.FreeValue(ctx, draw_res)
+		if js.IsException(draw_res) {
+			dump_exception(ctx)
+			panic("exception hit!")
+		}
 	rl.EndDrawing() }
 }
 
@@ -199,6 +209,7 @@ js_DrawRectangle :: proc(ctx: js.Context, this: js.Value_Const, args: ..js.Value
 	assert(js.IsNumber(args[1]))
 	assert(js.IsNumber(args[2]))
 	assert(js.IsNumber(args[3]))
+	assert(js.IsObject(args[4]))
 	args4_class, args4_class_ok := js.GetClassID(args[4])
 	assert(args4_class_ok && args4_class == color_class_id)
 
@@ -223,14 +234,102 @@ js_DrawRectangle :: proc(ctx: js.Context, this: js.Value_Const, args: ..js.Value
 	return js.UNDEFINED
 }
 
+js_DrawCircle :: proc(ctx: js.Context, this: js.Value_Const, args: ..js.Value_Const) -> js.Value {
+	// TODO: throw exception, don't assert
+	assert(len(args) == 4)
+	assert(js.IsNumber(args[0]))
+	assert(js.IsNumber(args[1]))
+	assert(js.IsNumber(args[2]))
+	assert(js.IsObject(args[3]))
+	args3_class, args3_class_ok := js.GetClassID(args[3])
+	assert(args3_class_ok && args3_class == color_class_id)
+
+	i: int
+	radius: f64
+	ok: bool
+
+	i, ok = js.ToInt(ctx, args[0])
+	assert(ok)
+	x := c.int(i)
+	i, ok = js.ToInt(ctx, args[1])
+	assert(ok)
+	y := c.int(i)
+	radius, ok = js.ToF64(ctx, args[2])
+	assert(ok)
+
+	rl.DrawCircle(x, y, f32(radius), _get_color(ctx, args[3]))
+
+	return js.UNDEFINED
+}
+
+js_DrawText :: proc(ctx: js.Context, this: js.Value_Const, args: ..js.Value_Const) -> js.Value {
+	// TODO: throw exception, don't assert
+	assert(len(args) == 5)
+	assert(js.IsString(args[0]))
+	assert(js.IsNumber(args[1]))
+	assert(js.IsNumber(args[2]))
+	assert(js.IsNumber(args[3]))
+	assert(js.IsObject(args[4]))
+	args4_class, args4_class_ok := js.GetClassID(args[4])
+	assert(args4_class_ok && args4_class == color_class_id)
+
+	i: int
+	text: cstring
+	ok: bool
+
+	text = js.ToCString(ctx, args[0])
+	defer js.FreeCString(ctx, text)
+	i, ok = js.ToInt(ctx, args[1])
+	assert(ok)
+	x := c.int(i)
+	i, ok = js.ToInt(ctx, args[2])
+	assert(ok)
+	y := c.int(i)
+	i, ok = js.ToInt(ctx, args[3])
+	assert(ok)
+	font_size := c.int(i)
+	color := _get_color(ctx, args[4])
+
+	rl.DrawText(text, x, y, font_size, color)
+
+	return js.UNDEFINED
+}
+
+js_MeasureText :: proc(ctx: js.Context, this: js.Value_Const, args: ..js.Value_Const) -> js.Value {
+	// TODO: throw exception, don't assert
+	assert(len(args) == 2)
+	assert(js.IsString(args[0]))
+	assert(js.IsNumber(args[1]))
+
+	i: int
+	text: cstring
+	ok: bool
+
+	text = js.ToCString(ctx, args[0])
+	defer js.FreeCString(ctx, text)
+	i, ok = js.ToInt(ctx, args[1])
+	assert(ok)
+	font_size := c.int(i)
+
+	width := rl.MeasureText(text, font_size)
+
+	return js.NewInt(ctx, int(width))
+}
+
 install_raylib :: proc(ctx: js.Context) {
 	global_obj := js.GetGlobalObject(ctx)
 	defer js.FreeValue(ctx, global_obj)
 	ClearBackground_fn := js.NewRawFunction(ctx, js.native_to_raw_function(js_ClearBackground), "ClearBackground", 1)
-	DrawRectangle_fn := js.NewRawFunction(ctx, js.native_to_raw_function(js_DrawRectangle), "DrawRectangle", 1)
+	DrawRectangle_fn := js.NewRawFunction(ctx, js.native_to_raw_function(js_DrawRectangle), "DrawRectangle", 5)
+	DrawCircle_fn := js.NewRawFunction(ctx, js.native_to_raw_function(js_DrawCircle), "DrawCircle", 4)
+	DrawText_fn := js.NewRawFunction(ctx, js.native_to_raw_function(js_DrawText), "DrawText", 5)
+	MeasureText_fn := js.NewRawFunction(ctx, js.native_to_raw_function(js_MeasureText), "MeasureText", 2)
 
 	js.SetPropertyCStr(ctx, global_obj, "ClearBackground", ClearBackground_fn)
 	js.SetPropertyCStr(ctx, global_obj, "DrawRectangle", DrawRectangle_fn)
+	js.SetPropertyCStr(ctx, global_obj, "DrawCircle", DrawCircle_fn)
+	js.SetPropertyCStr(ctx, global_obj, "DrawText", DrawText_fn)
+	js.SetPropertyCStr(ctx, global_obj, "MeasureText", MeasureText_fn)
 
 	js.SetPropertyCStr(ctx, global_obj, "fps", js.NewInt(ctx, int(DEFAULT_FPS)))
 	js.SetPropertyCStr(ctx, global_obj, "window_width", js.NewInt(ctx, int(DEFAULT_WIDTH)))
