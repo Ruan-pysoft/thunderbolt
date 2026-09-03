@@ -1,7 +1,7 @@
 const paddle_width = 10;
 const paddle_height = 50;
 const paddle_offset = 25;
-const paddle_speed = 5;
+const paddle_speed = 2.5;
 
 const divider_width = 10;
 
@@ -17,13 +17,13 @@ var score2 = 0;
 
 var ball_x = window_width/2;
 var ball_y = window_height/2;
-var ball_dx = 5;
-var ball_dy = 5;
+var ball_dx = 2.5;
+var ball_dy = 2.5;
 
 var dx_idx = 0;
-const dx_seq = [5, -6, -4, 5.2, 5.5, -4.5];
+const dx_seq = [3.7, -3, -3, 2.6, 2.75, -3.35];
 var dy_idx = 0;
-const dy_seq = [5, -4.4, 4.4, -5.2, 6];
+const dy_seq = [3.7, -3.3, 3.3, -2.6, 3];
 
 function DrawTextCentered(text, x_center, y, font_size, color) {
 	const width = MeasureText(text, font_size);
@@ -118,6 +118,8 @@ function draw() {
 	const half_window_width = (window_width - divider_width)/2;
 	DrawTextCentered(""+score1, half_window_width/2, 20, 50, Color.BLACK);
 	DrawTextCentered(""+score2, window_width - half_window_width/2, 20, 50, Color.BLACK);
+
+	DrawFPS(10, 10)
 
 	DrawCircle(ball_x, ball_y, ball_radius, Color.BLACK);
 }

@@ -19,7 +19,7 @@ IsRawColor :: proc(v: js.Value_Const) -> bool {
 	return js.tag_of(v) == .Int
 }
 
-DEFAULT_FPS :: c.int(16)
+DEFAULT_FPS :: c.int(60)
 DEFAULT_WIDTH :: c.int(800)
 DEFAULT_HEIGHT :: c.int(600)
 DEFAULT_TITLE :: cstring("THUNDERBOLT_TITLE")
@@ -109,6 +109,7 @@ raylib_update_properties :: proc(ctx: js.Context) {
 	props, must_free_title := raylib_fetch_properties(ctx)
 
 	if props.fps != old.fps {
+		fmt.eprintln("SetTargetFPS", props.fps)
 		rl.SetTargetFPS(props.fps)
 		old.fps = props.fps
 	}
@@ -132,6 +133,7 @@ raylib_start :: proc(ctx: js.Context) {
 	props, must_free_title := raylib_fetch_properties(ctx)
 	defer if must_free_title do js.FreeCString(ctx, props.title)
 
+	fmt.eprintln("(init) SetTargetFPS", props.fps)
 	rl.SetTargetFPS(props.fps)
 	rl.InitWindow(props.width, props.height, props.title)
 }
@@ -146,8 +148,6 @@ raylib_run_eventloop :: proc(ctx: js.Context) {
 
 	js_update_fn := js.GetPropertyCStr(ctx, global_obj, "update")
 	defer js.FreeValue(ctx, js_update_fn)
-
-	raylib_update_properties(ctx)
 
 	js_draw_fn := js.GetPropertyCStr(ctx, global_obj, "draw")
 	defer js.FreeValue(ctx, js_draw_fn)
@@ -180,6 +180,8 @@ raylib_run_eventloop :: proc(ctx: js.Context) {
 		dump_exception(ctx)
 		panic("exception hit!")
 	}
+
+	raylib_update_properties(ctx)
 
 	{ rl.BeginDrawing()
 		draw_res := js.Call(ctx, js_draw_fn, js.UNDEFINED)
@@ -296,6 +298,27 @@ js_DrawText :: proc(ctx: js.Context, this: js.Value_Const, args: ..js.Value_Cons
 	return js.UNDEFINED
 }
 
+js_DrawFPS :: proc(ctx: js.Context, this: js.Value_Const, args: ..js.Value_Const) -> js.Value {
+	// TODO: throw exception, don't assert
+	assert(len(args) == 2)
+	assert(js.IsNumber(args[0]))
+	assert(js.IsNumber(args[1]))
+
+	i: int
+	ok: bool
+
+	i, ok = js.ToInt(ctx, args[0])
+	assert(ok)
+	x := c.int(i)
+	i, ok = js.ToInt(ctx, args[1])
+	assert(ok)
+	y := c.int(i)
+
+	rl.DrawFPS(x, y)
+
+	return js.UNDEFINED
+}
+
 js_MeasureText :: proc(ctx: js.Context, this: js.Value_Const, args: ..js.Value_Const) -> js.Value {
 	// TODO: throw exception, don't assert
 	assert(len(args) == 2)
@@ -360,6 +383,7 @@ install_raylib :: proc(ctx: js.Context) {
 	DrawRectangle_fn := js.NewRawFunction(ctx, js.native_to_raw_function(js_DrawRectangle), "DrawRectangle", 5)
 	DrawCircle_fn := js.NewRawFunction(ctx, js.native_to_raw_function(js_DrawCircle), "DrawCircle", 4)
 	DrawText_fn := js.NewRawFunction(ctx, js.native_to_raw_function(js_DrawText), "DrawText", 5)
+	DrawFPS_fn := js.NewRawFunction(ctx, js.native_to_raw_function(js_DrawFPS), "DrawFPS", 2)
 	MeasureText_fn := js.NewRawFunction(ctx, js.native_to_raw_function(js_MeasureText), "MeasureText", 2)
 	IsKeyDown_fn := js.NewRawFunction(ctx, js.native_to_raw_function(js_IsKeyDown), "IsKeyDown", 1)
 
@@ -367,6 +391,7 @@ install_raylib :: proc(ctx: js.Context) {
 	js.SetPropertyCStr(ctx, global_obj, "DrawRectangle", DrawRectangle_fn)
 	js.SetPropertyCStr(ctx, global_obj, "DrawCircle", DrawCircle_fn)
 	js.SetPropertyCStr(ctx, global_obj, "DrawText", DrawText_fn)
+	js.SetPropertyCStr(ctx, global_obj, "DrawFPS", DrawFPS_fn)
 	js.SetPropertyCStr(ctx, global_obj, "MeasureText", MeasureText_fn)
 	js.SetPropertyCStr(ctx, global_obj, "IsKeyDown", IsKeyDown_fn)
 
