@@ -383,6 +383,41 @@ color_proto_funcs := [?]js.Raw_Function_List_Entry {
 
 	js.raw_func_def("toString", 0, js.native_to_raw_function(color_class_to_string)),
 }
+make_js_color :: proc(ctx: js.Context, color: rl.Color) -> js.Value {
+	res := js.NewObjectClass(ctx, color_class_id)
+	assert(!js.IsException(res)) // TODO: ...
+	_set_color(ctx, res, color)
+	return res
+}
+default_colors := [?]struct { name: string, color: rl.Color } {
+	{ "LIGHTGRAY", rl.LIGHTGRAY },
+	{ "GRAY", rl.GRAY },
+	{ "DARKGRAY", rl.DARKGRAY },
+	{ "YELLOW", rl.YELLOW },
+	{ "GOLD", rl.GOLD },
+	{ "ORANGE", rl.ORANGE },
+	{ "PINK", rl.PINK },
+	{ "RED", rl.RED },
+	{ "MAROON", rl.MAROON },
+	{ "GREEN", rl.GREEN },
+	{ "LIME", rl.LIME },
+	{ "DARKGREEN", rl.DARKGREEN },
+	{ "SKYBLUE", rl.SKYBLUE },
+	{ "BLUE", rl.BLUE },
+	{ "DARKBLUE", rl.DARKBLUE },
+	{ "PURPLE", rl.PURPLE },
+	{ "VIOLET", rl.VIOLET },
+	{ "DARKPURPLE", rl.DARKPURPLE },
+	{ "BEIGE", rl.BEIGE },
+	{ "BROWN", rl.BROWN },
+	{ "DARKBROWN", rl.DARKBROWN },
+
+	{ "WHITE", rl.WHITE },
+	{ "BLACK", rl.BLACK },
+	{ "BLANK", rl.BLANK },
+	{ "MAGENTA", rl.MAGENTA },
+	{ "RAYWHITE", rl.RAYWHITE },
+}
 define_color_class :: proc(rt: js.Runtime, ctx: js.Context, global_obj: js.Value) {
 	assert(color_class_id == 0, "define_color_class shouldn't be called more than once!")
 
@@ -419,4 +454,9 @@ define_color_class :: proc(rt: js.Runtime, ctx: js.Context, global_obj: js.Value
 	js.SetConstructor(ctx, ctor, proto)
 
 	js.SetPropertyCStr(ctx, global_obj, "Color", ctor)
+
+	for elem in default_colors {
+		js.SetPropertyStr(ctx, global_obj, elem.name, make_js_color(ctx, elem.color))
+		js.SetPropertyStr(ctx, ctor, elem.name, make_js_color(ctx, elem.color))
+	}
 }
