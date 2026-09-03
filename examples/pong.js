@@ -1,6 +1,7 @@
 const paddle_width = 10;
 const paddle_height = 50;
 const paddle_offset = 25;
+const paddle_speed = 5;
 
 const divider_width = 10;
 
@@ -17,7 +18,7 @@ var score2 = 0;
 var ball_x = window_width/2;
 var ball_y = window_height/2;
 var ball_dx = 5;
-var ball_dy = 0.1//5;
+var ball_dy = 5;
 
 var dx_idx = 0;
 const dx_seq = [5, -6, -4, 5.2, 5.5, -4.5];
@@ -55,6 +56,22 @@ function collide_circle_rect(cx, cy, r, x, y, w, h) {
 function update() {
 	ball_x += ball_dx;
 	ball_y += ball_dy;
+
+	if (IsKeyDown(Key.F)) {
+		paddle1_y += paddle_speed;
+		if (paddle1_y + paddle_height >= window_height) paddle1_y = window_height - paddle_height - 1;
+	} else if (IsKeyDown(Key.D)) {
+		paddle1_y -= paddle_speed;
+		if (paddle1_y < 0) paddle1_y = 0;
+	}
+
+	if (IsKeyDown(Key.J)) {
+		paddle2_y += paddle_speed;
+		if (paddle2_y + paddle_height >= window_height) paddle2_y = window_height - paddle_height - 1;
+	} else if (IsKeyDown(Key.K)) {
+		paddle2_y -= paddle_speed;
+		if (paddle2_y < 0) paddle2_y = 0;
+	}
 
 	if (ball_x + ball_radius >= window_width) {
 		score1 += 1;

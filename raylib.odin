@@ -2,6 +2,7 @@ package thunderbolt
 
 import "core:c"
 import "core:fmt"
+import "core:reflect"
 import "core:strings"
 
 import rl "vendor:raylib"
@@ -316,6 +317,42 @@ js_MeasureText :: proc(ctx: js.Context, this: js.Value_Const, args: ..js.Value_C
 	return js.NewInt(ctx, int(width))
 }
 
+js_IsKeyDown :: proc(ctx: js.Context, this: js.Value_Const, args: ..js.Value_Const) -> js.Value {
+	// TODO: throw exception, don't assert
+	assert(len(args) == 1)
+	assert(js.IsNumber(args[0]))
+
+	i: int
+	ok: bool
+
+	i, ok = js.ToInt(ctx, args[0])
+	assert(ok)
+	key := rl.KeyboardKey(i)
+
+	return js.NewBool(ctx, rl.IsKeyDown(key))
+}
+
+register_keyboard_keys :: proc(ctx: js.Context, global_obj: js.Value) {
+	// TODO: do some sort of proper thing here to better emulate an enum?
+
+	key := js.NewObject(ctx)
+
+	for key_field in reflect.enum_fields_zipped(rl.KeyboardKey) {
+		as_js_int := js.NewInt(ctx, int(key_field.value))
+
+		js.SetPropertyStr(ctx, key, key_field.name, as_js_int)
+	}
+
+	object := js.GetPropertyCStr(ctx, global_obj, "Object")
+	defer js.FreeValue(ctx, object)
+	freeze := js.GetPropertyCStr(ctx, object, "freeze")
+	defer js.FreeValue(ctx, freeze)
+	assert(js.IsFunction(ctx, freeze))
+	js.FreeValue(ctx, js.Call(ctx, freeze, object, key))
+
+	js.SetPropertyCStr(ctx, global_obj, "Key", key)
+}
+
 install_raylib :: proc(ctx: js.Context) {
 	global_obj := js.GetGlobalObject(ctx)
 	defer js.FreeValue(ctx, global_obj)
@@ -324,12 +361,14 @@ install_raylib :: proc(ctx: js.Context) {
 	DrawCircle_fn := js.NewRawFunction(ctx, js.native_to_raw_function(js_DrawCircle), "DrawCircle", 4)
 	DrawText_fn := js.NewRawFunction(ctx, js.native_to_raw_function(js_DrawText), "DrawText", 5)
 	MeasureText_fn := js.NewRawFunction(ctx, js.native_to_raw_function(js_MeasureText), "MeasureText", 2)
+	IsKeyDown_fn := js.NewRawFunction(ctx, js.native_to_raw_function(js_IsKeyDown), "IsKeyDown", 1)
 
 	js.SetPropertyCStr(ctx, global_obj, "ClearBackground", ClearBackground_fn)
 	js.SetPropertyCStr(ctx, global_obj, "DrawRectangle", DrawRectangle_fn)
 	js.SetPropertyCStr(ctx, global_obj, "DrawCircle", DrawCircle_fn)
 	js.SetPropertyCStr(ctx, global_obj, "DrawText", DrawText_fn)
 	js.SetPropertyCStr(ctx, global_obj, "MeasureText", MeasureText_fn)
+	js.SetPropertyCStr(ctx, global_obj, "IsKeyDown", IsKeyDown_fn)
 
 	js.SetPropertyCStr(ctx, global_obj, "fps", js.NewInt(ctx, int(DEFAULT_FPS)))
 	js.SetPropertyCStr(ctx, global_obj, "window_width", js.NewInt(ctx, int(DEFAULT_WIDTH)))
@@ -337,6 +376,8 @@ install_raylib :: proc(ctx: js.Context) {
 	js.SetPropertyCStr(ctx, global_obj, "window_title", js.NewString(ctx, DEFAULT_TITLE))
 
 	define_color_class(js.GetRuntime(ctx), ctx, global_obj)
+
+	register_keyboard_keys(ctx, global_obj)
 }
 
 color_class_id: js.Class_Id
