@@ -313,14 +313,22 @@ foreign quickjs {
 	GetClassID :: proc(v: Value) -> Class_Id ---
 	NewClass :: proc(rt: Runtime, class_id: Class_Id, #by_ptr class_def: Class_Def) -> c.int ---
 
+	Throw :: proc(ctx: Context, obj: Value) -> Value ---
 	GetException :: proc(ctx: Context) -> Value ---
+	NewError :: proc(ctx: Context) -> Value ---
+	ThrowSyntaxError :: proc(ctx: Context, fmt: cstring, #c_vararg args: ..any) -> Value ---
+	ThrowTypeError :: proc(ctx: Context, fmt: cstring, #c_vararg args: ..any) -> Value ---
+	ThrowReferenceError :: proc(ctx: Context, fmt: cstring, #c_vararg args: ..any) -> Value ---
+	ThrowRangeError :: proc(ctx: Context, fmt: cstring, #c_vararg args: ..any) -> Value ---
+	ThrowInternalError :: proc(ctx: Context, fmt: cstring, #c_vararg args: ..any) -> Value ---
+	ThrowOutOfMemory :: proc(ctx: Context) -> Value ---
 
 	@(private)
 	GetPropertyInternal :: proc(ctx: Context, obj: Value_Const, prop: Atom, receiver: Value_Const, throw_ref_error: Bool) -> Value ---
 	GetPropertyStr :: proc(ctx: Context, this_obj: Value_Const, prop: cstring) -> Value ---
 	@(private)
 	SetPropertyInternal :: proc(ctx: Context, obj: Value_Const, prop: Atom, val: Value, this_obj: Value_Const, flags: c.int) -> c.int ---
-	SetPropertyStr :: proc(ctx: Context, this_obj: Value_Const, prop: cstring, val: Value) -> int ---
+	SetPropertyStr :: proc(ctx: Context, this_obj: Value_Const, prop: cstring, val: Value) -> c.int ---
 
 	NewStringLen :: proc(ctx: Context, str1: cstring, len1: c.size_t) -> Value ---
 	ToString :: proc(ctx: Context, val: Value_Const) -> Value ---

@@ -9,16 +9,6 @@ import rl "vendor:raylib"
 
 import js "vendor/quickjs_odin"
 
-ColorToRawValue :: proc"contextless"(ctx: js.Context, color: rl.Color) -> js.Value {
-	return js.NewI32(ctx, transmute(i32) color)
-}
-RawValueToColor :: proc"contextless"(ctx: js.Context, v: js.Value_Const) -> (res: rl.Color, ok: bool) {
-	return transmute(rl.Color) js.ToI32(ctx, v) or_return, true
-}
-IsRawColor :: proc(v: js.Value_Const) -> bool {
-	return js.tag_of(v) == .Int
-}
-
 DEFAULT_FPS :: c.int(60)
 DEFAULT_WIDTH :: c.int(800)
 DEFAULT_HEIGHT :: c.int(600)
@@ -196,11 +186,9 @@ raylib_run_eventloop :: proc(ctx: js.Context) {
 js_ClearBackground :: proc(ctx: js.Context, this: js.Value_Const, args: ..js.Value_Const) -> js.Value {
 	// TODO: throw exception, don't assert
 	assert(len(args) == 1)
-	assert(js.IsObject(args[0]))
-	args0_class, args0_class_ok := js.GetClassID(args[0])
-	assert(args0_class_ok && args0_class == color_class_id)
+	assert(IsOfClass(cColor, args[0]))
 
-	rl.ClearBackground(_get_color(ctx, args[0]))
+	rl.ClearBackground(cColor_get_color(ctx, args[0]))
 
 	return js.UNDEFINED
 }
@@ -212,9 +200,7 @@ js_DrawRectangle :: proc(ctx: js.Context, this: js.Value_Const, args: ..js.Value
 	assert(js.IsNumber(args[1]))
 	assert(js.IsNumber(args[2]))
 	assert(js.IsNumber(args[3]))
-	assert(js.IsObject(args[4]))
-	args4_class, args4_class_ok := js.GetClassID(args[4])
-	assert(args4_class_ok && args4_class == color_class_id)
+	assert(IsOfClass(cColor, args[4]))
 
 	i: int
 	ok: bool
@@ -232,7 +218,7 @@ js_DrawRectangle :: proc(ctx: js.Context, this: js.Value_Const, args: ..js.Value
 	assert(ok)
 	height := c.int(i)
 
-	rl.DrawRectangle(x, y, width, height, _get_color(ctx, args[4]))
+	rl.DrawRectangle(x, y, width, height, cColor_get_color(ctx, args[4]))
 
 	return js.UNDEFINED
 }
@@ -243,9 +229,7 @@ js_DrawCircle :: proc(ctx: js.Context, this: js.Value_Const, args: ..js.Value_Co
 	assert(js.IsNumber(args[0]))
 	assert(js.IsNumber(args[1]))
 	assert(js.IsNumber(args[2]))
-	assert(js.IsObject(args[3]))
-	args3_class, args3_class_ok := js.GetClassID(args[3])
-	assert(args3_class_ok && args3_class == color_class_id)
+	assert(IsOfClass(cColor, args[3]))
 
 	i: int
 	radius: f64
@@ -260,7 +244,7 @@ js_DrawCircle :: proc(ctx: js.Context, this: js.Value_Const, args: ..js.Value_Co
 	radius, ok = js.ToF64(ctx, args[2])
 	assert(ok)
 
-	rl.DrawCircle(x, y, f32(radius), _get_color(ctx, args[3]))
+	rl.DrawCircle(x, y, f32(radius), cColor_get_color(ctx, args[3]))
 
 	return js.UNDEFINED
 }
@@ -272,9 +256,7 @@ js_DrawText :: proc(ctx: js.Context, this: js.Value_Const, args: ..js.Value_Cons
 	assert(js.IsNumber(args[1]))
 	assert(js.IsNumber(args[2]))
 	assert(js.IsNumber(args[3]))
-	assert(js.IsObject(args[4]))
-	args4_class, args4_class_ok := js.GetClassID(args[4])
-	assert(args4_class_ok && args4_class == color_class_id)
+	assert(IsOfClass(cColor, args[4]))
 
 	i: int
 	text: cstring
@@ -291,7 +273,7 @@ js_DrawText :: proc(ctx: js.Context, this: js.Value_Const, args: ..js.Value_Cons
 	i, ok = js.ToInt(ctx, args[3])
 	assert(ok)
 	font_size := c.int(i)
-	color := _get_color(ctx, args[4])
+	color := cColor_get_color(ctx, args[4])
 
 	rl.DrawText(text, x, y, font_size, color)
 
@@ -377,6 +359,7 @@ register_keyboard_keys :: proc(ctx: js.Context, global_obj: js.Value) {
 }
 
 install_raylib :: proc(ctx: js.Context) {
+	rt := js.GetRuntime(ctx)
 	global_obj := js.GetGlobalObject(ctx)
 	defer js.FreeValue(ctx, global_obj)
 	ClearBackground_fn := js.NewRawFunction(ctx, js.native_to_raw_function(js_ClearBackground), "ClearBackground", 1)
@@ -400,290 +383,9 @@ install_raylib :: proc(ctx: js.Context) {
 	js.SetPropertyCStr(ctx, global_obj, "window_height", js.NewInt(ctx, int(DEFAULT_HEIGHT)))
 	js.SetPropertyCStr(ctx, global_obj, "window_title", js.NewString(ctx, DEFAULT_TITLE))
 
-	define_color_class(js.GetRuntime(ctx), ctx, global_obj)
+	for class in class_registry {
+		register_class(rt, ctx, global_obj, class)
+	}
 
 	register_keyboard_keys(ctx, global_obj)
-}
-
-color_class_id: js.Class_Id
-color_class_def := js.Class_Def {
-	class_name = "Color",
-}
-_get_color :: proc"contextless"(ctx: js.Context, color_obj: js.Value_Const) -> rl.Color {
-	// TODO: ...
-	assert_contextless(js.IsObject(color_obj))
-	obj_class, obj_class_ok := js.GetClassID(color_obj)
-	assert_contextless(obj_class_ok && obj_class == color_class_id)
-
-	raw_color := js.GetPropertyCStr(ctx, color_obj, "__raw_color")
-	assert_contextless(js.tag_of(raw_color) == .Int)
-
-	color, ok := RawValueToColor(ctx, raw_color)
-	assert_contextless(ok)
-
-	return color
-}
-_set_color :: proc"contextless"(ctx: js.Context, color_obj: js.Value_Const, color: rl.Color) {
-	// TODO: ...
-	assert_contextless(js.IsObject(color_obj))
-	obj_class, obj_class_ok := js.GetClassID(color_obj)
-	assert_contextless(obj_class_ok && obj_class == color_class_id)
-
-	raw_color := ColorToRawValue(ctx, color)
-
-	js.SetPropertyCStr(ctx, color_obj, "__raw_color", raw_color)
-}
-color_class_constructor :: proc(ctx: js.Context, new_target: js.Value_Const, args: ..js.Value_Const) -> js.Value {
-	// TODO: respect subclassed prototype or whatever it's called
-	color: rl.Color
-
-	if len(args) == 1 {
-		// TODO: throw exception, don't assert
-		assert(js.IsNumber(args[0]))
-
-		g, ok := js.ToI32(ctx, args[0])
-		assert(ok)
-		assert(0 <= g && g < 256)
-		color = { u8(g), u8(g), u8(g), 255 }
-	} else if len(args) == 2 {
-		// TODO: throw exception, don't assert
-		assert(js.IsNumber(args[0]))
-		assert(js.IsNumber(args[1]))
-
-		g, a: i32
-		ok: bool
-		g, ok = js.ToI32(ctx, args[0])
-		assert(ok)
-		assert(0 <= g && g < 256)
-		a, ok = js.ToI32(ctx, args[1])
-		assert(ok)
-		assert(0 <= a && a < 256)
-		color = { u8(g), u8(g), u8(g), u8(a) }
-	} else if len(args) == 3 {
-		// TODO: throw exception, don't assert
-		assert(js.IsNumber(args[0]))
-		assert(js.IsNumber(args[1]))
-		assert(js.IsNumber(args[2]))
-
-		r, g, b: i32
-		ok: bool
-		r, ok = js.ToI32(ctx, args[0])
-		assert(ok)
-		assert(0 <= r && r < 256)
-		g, ok = js.ToI32(ctx, args[1])
-		assert(ok)
-		assert(0 <= g && g < 256)
-		b, ok = js.ToI32(ctx, args[2])
-		assert(ok)
-		assert(0 <= b && b < 256)
-		color = { u8(r), u8(g), u8(b), 255 }
-	} else if len(args) == 4 {
-		// TODO: throw exception, don't assert
-		assert(js.IsNumber(args[0]))
-		assert(js.IsNumber(args[1]))
-		assert(js.IsNumber(args[2]))
-		assert(js.IsNumber(args[3]))
-
-		r, g, b, a: i32
-		ok: bool
-		r, ok = js.ToI32(ctx, args[0])
-		assert(ok)
-		assert(0 <= r && r < 256)
-		g, ok = js.ToI32(ctx, args[1])
-		assert(ok)
-		assert(0 <= g && g < 256)
-		b, ok = js.ToI32(ctx, args[2])
-		assert(ok)
-		assert(0 <= b && b < 256)
-		a, ok = js.ToI32(ctx, args[3])
-		assert(ok)
-		assert(0 <= a && a < 256)
-		color = { u8(r), u8(g), u8(b), u8(a) }
-	} else do panic("too many arguments")
-
-	res := js.NewObjectClass(ctx, color_class_id)
-	if js.IsException(res) do return res
-
-	_set_color(ctx, res, color)
-
-	return res
-}
-color_class_get_r :: proc"c"(ctx: js.Context, this: js.Value_Const) -> js.Value {
-	return js.NewInt(ctx, int(_get_color(ctx, this).r))
-}
-color_class_set_r :: proc"c"(ctx: js.Context, this: js.Value_Const, val: js.Value_Const) -> js.Value {
-	// TODO: etc etc
-	assert_contextless(js.IsNumber(val))
-
-	r: i32
-	ok: bool
-	r, ok = js.ToI32(ctx, val)
-	assert_contextless(ok)
-	assert_contextless(0 <= r && r < 256)
-
-	color := _get_color(ctx, this)
-
-	color.r = u8(r)
-
-	_set_color(ctx, this, color)
-
-	return js.UNDEFINED
-}
-color_class_get_g :: proc"c"(ctx: js.Context, this: js.Value_Const) -> js.Value {
-	return js.NewInt(ctx, int(_get_color(ctx, this).g))
-}
-color_class_set_g :: proc"c"(ctx: js.Context, this: js.Value_Const, val: js.Value_Const) -> js.Value {
-	// TODO: etc etc
-	assert_contextless(js.IsNumber(val))
-
-	g: i32
-	ok: bool
-	g, ok = js.ToI32(ctx, val)
-	assert_contextless(ok)
-	assert_contextless(0 <= g && g < 256)
-
-	color := _get_color(ctx, this)
-
-	color.g = u8(g)
-
-	_set_color(ctx, this, color)
-
-	return js.UNDEFINED
-}
-color_class_get_b :: proc"c"(ctx: js.Context, this: js.Value_Const) -> js.Value {
-	return js.NewInt(ctx, int(_get_color(ctx, this).b))
-}
-color_class_set_b :: proc"c"(ctx: js.Context, this: js.Value_Const, val: js.Value_Const) -> js.Value {
-	// TODO: etc etc
-	assert_contextless(js.IsNumber(val))
-
-	b: i32
-	ok: bool
-	b, ok = js.ToI32(ctx, val)
-	assert_contextless(ok)
-	assert_contextless(0 <= b && b < 256)
-
-	color := _get_color(ctx, this)
-
-	color.b = u8(b)
-
-	_set_color(ctx, this, color)
-
-	return js.UNDEFINED
-}
-color_class_get_a :: proc"c"(ctx: js.Context, this: js.Value_Const) -> js.Value {
-	return js.NewInt(ctx, int(_get_color(ctx, this).a))
-}
-color_class_set_a :: proc"c"(ctx: js.Context, this: js.Value_Const, val: js.Value_Const) -> js.Value {
-	// TODO: etc etc
-	assert_contextless(js.IsNumber(val))
-
-	a: i32
-	ok: bool
-	a, ok = js.ToI32(ctx, val)
-	assert_contextless(ok)
-	assert_contextless(0 <= a && a < 256)
-
-	color := _get_color(ctx, this)
-
-	color.a = u8(a)
-
-	_set_color(ctx, this, color)
-
-	return js.UNDEFINED
-}
-color_class_to_string :: proc(ctx: js.Context, this: js.Value_Const, args: ..js.Value_Const) -> js.Value {
-	// TODO: throw exception, don't assert
-	assert(len(args) == 0)
-
-	c := _get_color(ctx, this)
-	print_buf: [128]u8
-	str := fmt.bprintf(print_buf[:], "Color %c r: %d, g: %d, b: %d, a: %d %c", '{', c.r, c.g, c.b, c.a, '}')
-
-	return js.NewString(ctx, str)
-}
-color_proto_funcs := [?]js.Raw_Function_List_Entry {
-	js.raw_getset_def("r", color_class_get_r, color_class_set_r),
-	js.raw_getset_def("g", color_class_get_g, color_class_set_g),
-	js.raw_getset_def("b", color_class_get_b, color_class_set_b),
-	js.raw_getset_def("a", color_class_get_a, color_class_set_a),
-
-	js.raw_func_def("toString", 0, js.native_to_raw_function(color_class_to_string)),
-}
-make_js_color :: proc(ctx: js.Context, color: rl.Color) -> js.Value {
-	res := js.NewObjectClass(ctx, color_class_id)
-	assert(!js.IsException(res)) // TODO: ...
-	_set_color(ctx, res, color)
-	return res
-}
-default_colors := [?]struct { name: string, color: rl.Color } {
-	{ "LIGHTGRAY", rl.LIGHTGRAY },
-	{ "GRAY", rl.GRAY },
-	{ "DARKGRAY", rl.DARKGRAY },
-	{ "YELLOW", rl.YELLOW },
-	{ "GOLD", rl.GOLD },
-	{ "ORANGE", rl.ORANGE },
-	{ "PINK", rl.PINK },
-	{ "RED", rl.RED },
-	{ "MAROON", rl.MAROON },
-	{ "GREEN", rl.GREEN },
-	{ "LIME", rl.LIME },
-	{ "DARKGREEN", rl.DARKGREEN },
-	{ "SKYBLUE", rl.SKYBLUE },
-	{ "BLUE", rl.BLUE },
-	{ "DARKBLUE", rl.DARKBLUE },
-	{ "PURPLE", rl.PURPLE },
-	{ "VIOLET", rl.VIOLET },
-	{ "DARKPURPLE", rl.DARKPURPLE },
-	{ "BEIGE", rl.BEIGE },
-	{ "BROWN", rl.BROWN },
-	{ "DARKBROWN", rl.DARKBROWN },
-
-	{ "WHITE", rl.WHITE },
-	{ "BLACK", rl.BLACK },
-	{ "BLANK", rl.BLANK },
-	{ "MAGENTA", rl.MAGENTA },
-	{ "RAYWHITE", rl.RAYWHITE },
-}
-define_color_class :: proc(rt: js.Runtime, ctx: js.Context, global_obj: js.Value) {
-	assert(color_class_id == 0, "define_color_class shouldn't be called more than once!")
-
-	js.NewClassID(&color_class_id) // should this return value be used??
-
-	assert(js.NewClass(rt, color_class_id, color_class_def))
-
-	proto := js.NewObject(ctx)
-
-	js.SetPropertyFunctionList(
-		ctx,
-		proto,
-		color_proto_funcs[:],
-	)
-	Symbol := js.GetPropertyCStr(ctx, global_obj, "Symbol")
-	defer js.FreeValue(ctx, Symbol)
-	to_string_tag := js.GetPropertyCStr(ctx, Symbol, "toStringTag")
-	defer js.FreeValue(ctx, to_string_tag)
-	assert(!js.IsException(to_string_tag))
-	js.SetProperty(ctx, proto, js.ValueToAtom(ctx, to_string_tag), js.NewString_OStr(ctx, "Color"))
-
-	js.SetClassProto(ctx, color_class_id, proto)
-
-	ctor := js.NewRawFunction2(
-		ctx,
-		js.native_to_raw_function_stateless(color_class_constructor),
-		"Color",
-		0,
-		.constructor,
-		0,
-	)
-
-	//js.SetConstructor2(ctx, ctor, proto, js.PROP_WRITABLE | js.PROP_CONFIGURABLE)
-	js.SetConstructor(ctx, ctor, proto)
-
-	js.SetPropertyCStr(ctx, global_obj, "Color", ctor)
-
-	for elem in default_colors {
-		js.SetPropertyStr(ctx, global_obj, elem.name, make_js_color(ctx, elem.color))
-		js.SetPropertyStr(ctx, ctor, elem.name, make_js_color(ctx, elem.color))
-	}
 }

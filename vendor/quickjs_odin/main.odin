@@ -150,7 +150,15 @@ ExecutePendingJob :: proc"contextless"(rt: Runtime, ctx: ^Context) -> (ok: bool)
 	return qjs.ExecutePendingJob(rt, ctx) == 0
 }
 
-GetException :: qjs.GetException
+Throw               :: qjs.Throw
+GetException        :: qjs.GetException
+NewError            :: qjs.NewError
+ThrowSyntaxError    :: qjs.ThrowSyntaxError
+ThrowTypeError      :: qjs.ThrowTypeError
+ThrowReferenceError :: qjs.ThrowReferenceError
+ThrowRangeError     :: qjs.ThrowRangeError
+ThrowInternalError  :: qjs.ThrowInternalError
+ThrowOutOfMemory    :: qjs.ThrowOutOfMemory
 
 GetProperty     :: qjs.GetProperty
 GetPropertyCStr :: qjs.GetPropertyStr
@@ -161,13 +169,15 @@ GetPropertyOStr :: proc(ctx: Context, obj: Value_Const, prop: string) -> Value {
 }
 GetPropertyStr  :: proc { GetPropertyCStr, GetPropertyOStr }
 SetProperty     :: proc"contextless"(ctx: Context, obj: Value_Const, prop: Atom, val: Value) -> (ok: bool) {
-	return qjs.SetProperty(ctx, obj, prop, val) == 0
+	return qjs.SetProperty(ctx, obj, prop, val) == 1
 }
-SetPropertyCStr :: qjs.SetPropertyStr
+SetPropertyCStr :: proc"contextless"(ctx: Context, obj: Value_Const, prop: cstring, val: Value) -> (ok: bool) {
+	return qjs.SetPropertyStr(ctx, obj, prop, val) == 1
+}
 SetPropertyOStr :: proc(ctx: Context, obj: Value_Const, prop: string, val: Value) -> (ok: bool) {
 	cprop := strings.clone_to_cstring(prop)
 	defer free(rawptr(cprop))
-	return qjs.SetPropertyStr(ctx, obj, cprop, val) == 0
+	return qjs.SetPropertyStr(ctx, obj, cprop, val) == 1
 }
 SetPropertyStr :: proc { SetPropertyCStr, SetPropertyOStr }
 
