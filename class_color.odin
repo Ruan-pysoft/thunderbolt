@@ -8,7 +8,7 @@ import js "vendor/quickjs_odin"
 
 cColor := Class {
 	def = { class_name = "Color" },
-	ctor = js.native_to_raw_function(proc(
+	ctor = ctor_of("Color", proc(
 		ctx: js.Context,
 		new_target: js.Value_Const,
 		args: ..js.Value_Const,

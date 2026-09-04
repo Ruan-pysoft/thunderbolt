@@ -1,6 +1,8 @@
 package thunderbolt
 
+import "core:c"
 import "core:fmt"
+import "core:slice"
 
 import js "vendor/quickjs_odin"
 
@@ -20,6 +22,23 @@ Setup_Proc  :: #type proc(
 	proto, ctor: js.Value,
 ) -> (ok: bool)
 
+ctor_of :: proc"contextless"(
+	$name: string,
+	$ctor: js.Native_Function_Stateless,
+) -> Constructor {
+	raw_func :: proc"c"(ctx: js.Context, this: js.Value_Const, argc: c.int, argv: [^]js.Value_Const) -> js.Value {
+		state := js.GetRuntimeOpaque(^js.Context_Wrapper, js.GetRuntime(ctx))
+
+		context = state.ctx
+
+		args := slice.from_ptr(argv, int(argc))
+
+		return ctor(ctx, this, ..args)
+	}
+
+	return raw_func
+}
+
 IsOfClass :: proc"contextless"(class: Class, val: js.Value) -> bool {
 	if !js.IsObject(val) do return false
 	class_id, ok := js.GetClassID(val)
@@ -28,6 +47,7 @@ IsOfClass :: proc"contextless"(class: Class, val: js.Value) -> bool {
 
 class_registry := [?]^Class {
 	&cColor,
+	&cRectangle,
 }
 
 register_class :: proc(
